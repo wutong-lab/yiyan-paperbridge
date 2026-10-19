@@ -84,7 +84,8 @@ final class MacInstallerWindow: NSObject, NSWindowDelegate {
         pause.target=self;pause.action=#selector(pauseDownload);pause.isEnabled=false
         start.target=self;start.action=#selector(beginInstall);start.bezelStyle = .rounded;start.keyEquivalent="\r";start.contentTintColor=green
         let spacer=NSView();let actions=NSStackView(views:[spacer,pause,start]);spacer.setContentHuggingPriority(.defaultLow,for:.horizontal);actions.spacing=12
-        let footer=NSTextField(labelWithString:"译研 PaperBridge · 安装向导 1.8.3 · 首次安装联网，之后离线使用")
+        let installerVersion=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "1.8.4"
+        let footer=NSTextField(labelWithString:"译研 PaperBridge · 安装向导 \(installerVersion) · 首次安装联网，之后离线使用")
         footer.font = .systemFont(ofSize:11);footer.textColor = .secondaryLabelColor
         let stack=NSStackView(views:[title,subtitle,choices,hint,pathTitle,pathRow,options,status,detail,route,progress,actions,footer]);stack.orientation = .vertical;stack.alignment = .leading;stack.spacing=16;stack.translatesAutoresizingMaskIntoConstraints=false
         window.contentView!.addSubview(stack)

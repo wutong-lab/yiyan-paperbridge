@@ -1,6 +1,6 @@
 # 译研 Mac 安装与更新教程
 
-**[下载 Mac 一键安装器](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.8.3-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.8.3-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
+**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
 
 打开安装器，选择 4B 或 14B，点击“下载并安装”。应用、所选模型、字体和排版环境会自动装好，之后可直接离线使用。
 
@@ -64,6 +64,7 @@
 
 | 情况 | 操作 |
 |---|---|
+| 提示“安装归档包含无效路径” | 下载 1.8.4 或更新安装器，关闭旧向导后重新打开，选原来的模型与位置；已下载的模型缓存继续复用 |
 | 下载中途断开 | 保留下载缓存，再次点击继续 |
 | 提示译研正在运行 | 先等论文处理完成，退出译研后继续安装 |
 | 需要增加另一模型 | 打开安装器选择另一模型，或从软件的模型窗口下载 |

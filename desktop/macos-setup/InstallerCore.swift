@@ -197,16 +197,23 @@ final class ResumableTransfer: NSObject, URLSessionDataDelegate {
 
 func runArchive(_ files:[URL], arguments:[String]) throws -> Data {
     let process=Process();process.executableURL=URL(fileURLWithPath:"/usr/bin/tar");process.arguments=arguments
-    let input=Pipe(),output=Pipe();process.standardInput=input;process.standardOutput=output;process.standardError=output
+    // Finder-launched apps may inherit the C locale. BSD tar then octal-escapes
+    // Chinese names, which must never be mistaken for actual archive paths.
+    var environment=ProcessInfo.processInfo.environment
+    environment["LC_ALL"]="en_US.UTF-8";environment["LANG"]="en_US.UTF-8"
+    process.environment=environment
+    let input=Pipe(),output=Pipe(),errors=Pipe();process.standardInput=input;process.standardOutput=output;process.standardError=errors
     try process.run();let written=DispatchGroup();written.enter()
-    var writeFailure:Error?
+    var writeFailure:Error?,diagnostics=Data()
+    written.enter()
+    DispatchQueue.global().async {diagnostics=errors.fileHandleForReading.readDataToEndOfFile();written.leave()}
     DispatchQueue.global().async {
         defer{try? input.fileHandleForWriting.close();written.leave()}
         do {for file in files {let h=try FileHandle(forReadingFrom:file);defer{try? h.close()};while let d=try h.read(upToCount:4*1024*1024), !d.isEmpty {try input.fileHandleForWriting.write(contentsOf:d)}}}
         catch {writeFailure=error}
     }
     let data=output.fileHandleForReading.readDataToEndOfFile();process.waitUntilExit();written.wait()
-    if process.terminationStatus != 0 {throw SetupFailure.message("解压未完成："+String((String(data:data,encoding:.utf8) ?? "未知错误").prefix(500)))}
+    if process.terminationStatus != 0 {throw SetupFailure.message("解压未完成："+String((String(data:diagnostics,encoding:.utf8) ?? "未知错误").prefix(500)))}
     if let error=writeFailure {throw error};return data
 }
 func extractVerified(_ files:[URL], prefix:String, destination:URL) throws {
@@ -214,7 +221,7 @@ func extractVerified(_ files:[URL], prefix:String, destination:URL) throws {
     guard let text=String(data:list,encoding:.utf8), !text.isEmpty else {throw SetupFailure.message("安装归档无效。")}
     for line in text.split(separator:"\n") {
         let path=String(line)
-        guard (path==prefix || path.hasPrefix(prefix+"/")), !path.split(separator:"/").contains(".."), !path.hasPrefix("/") else {throw SetupFailure.message("安装归档包含无效路径。")}
+        guard (path==prefix || path.hasPrefix(prefix+"/")), !path.split(separator:"/").contains(".."), !path.hasPrefix("/") else {throw SetupFailure.message("安装归档包含无效路径："+String(path.prefix(160)))}
     }
     try FileManager.default.createDirectory(at:destination,withIntermediateDirectories:true)
     _=try runArchive(files,arguments:["-xf","-","--no-same-owner","-C",destination.path])

@@ -18,7 +18,7 @@ from package_windows import copy,digest
 CONFIG=json.loads((ROOT/'release-assets/windows-version.json').read_text())
 VERSION=CONFIG['version'];TAG=f'v{VERSION}-windows-update'
 OUT=ROOT/'dist/windows-update';APP=OUT/'Yiyan';HELPER=ROOT/'.cache/windows-update-build'
-BASE=f'https://github.com/{common.REPO}/releases/download/{TAG}/'
+BASE=f'https://github.com/{common.DOWNLOAD_REPO}/releases/download/{TAG}/'
 
 def publish(project,folder,version=VERSION):
     subprocess.run(['dotnet','publish',str(ROOT/project),'-c','Release','-r','win-x64','--self-contained','true','-p:PublishSingleFile=true','-p:IncludeNativeLibrariesForSelfExtract=true','-p:EnableCompressionInSingleFile=true',f'-p:Version={version}','-o',str(folder)],check=True)

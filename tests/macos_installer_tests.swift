@@ -41,6 +41,14 @@ func reset(_ mode:String) {TransportFixture.requests=[];TransportFixture.hosts=[
 @main struct Tests {
     static func main()throws {
         setbuf(stdout,nil)
+        if CommandLine.arguments.count==4 && CommandLine.arguments[1]=="--archive-smoke" {
+            setenv("LC_ALL","C",1);setenv("LANG","C",1)
+            let destination=URL(fileURLWithPath:CommandLine.arguments[3])
+            try extractVerified([URL(fileURLWithPath:CommandLine.arguments[2])],prefix:"译研.app",destination:destination)
+            try verifyApplication(destination.appendingPathComponent("译研.app"))
+            print("PASS actual signed application archive installs under Finder-style C locale")
+            return
+        }
         let sample=asset()
         try sample.validate()
         for invalid in [RemoteAsset(name:"../outside",url:sample.url,sha256:sample.sha256,bytes:sample.bytes),RemoteAsset(name:"sample.bin",url:"https://example.com/sample.bin",sha256:sample.sha256,bytes:sample.bytes)] {do{try invalid.validate();fatalError("Unsafe manifest accepted")}catch{}}
@@ -122,6 +130,30 @@ func reset(_ mode:String) {TransportFixture.requests=[];TransportFixture.hosts=[
         check(text.contains("1.0 MB/s") && text.contains("2 分钟"),"rate/ETA display failed")
         check(downloadProgressText(bytes:160,total:200_000_000,speed:0).contains("正在连接"),"resumed cached bytes fabricated a speed")
         print("PASS live rate and remaining-time formatting")
-        print("13 installer checks passed")
+        let fixtures=URL(fileURLWithPath:ProcessInfo.processInfo.environment["PAPERBRIDGE_ARCHIVE_FIXTURES"]!)
+        let previousLocale=ProcessInfo.processInfo.environment["LC_ALL"]
+        defer {if let previousLocale=previousLocale {setenv("LC_ALL",previousLocale,1)}else{unsetenv("LC_ALL")}}
+        for locale in ["C","POSIX",""] {
+            if locale.isEmpty {unsetenv("LC_ALL");unsetenv("LANG")}else{setenv("LC_ALL",locale,1);setenv("LANG",locale,1)}
+            let dir=try testDirectory("unicode");defer{try? FileManager.default.removeItem(at:dir.deletingLastPathComponent())}
+            try extractVerified([fixtures.appendingPathComponent("unicode.tar.gz")],prefix:"译研.app",destination:dir)
+            check(try! String(contentsOf:dir.appendingPathComponent("译研.app/Contents/资料 folder/测试.txt"),encoding:.utf8)=="verified archive fixture","Unicode payload changed")
+            print("PASS Chinese application archive installs with inherited locale "+(locale.isEmpty ? "unset":locale))
+        }
+        do {
+            let dir=try testDirectory("split");defer{try? FileManager.default.removeItem(at:dir.deletingLastPathComponent())}
+            try extractVerified([fixtures.appendingPathComponent("first.part"),fixtures.appendingPathComponent("second.part")],prefix:"译研.app",destination:dir)
+            check(FileManager.default.fileExists(atPath:dir.appendingPathComponent("译研.app/Contents/资料 folder/测试.txt").path),"Split archive lost Unicode file")
+            print("PASS split archive preserves Chinese paths and spaces")
+        }
+        for fixture in ["traversal","foreign","corrupt"] {
+            let dir=try testDirectory(fixture);defer{try? FileManager.default.removeItem(at:dir.deletingLastPathComponent())}
+            var rejected=false
+            do{try extractVerified([fixtures.appendingPathComponent(fixture+".tar.gz")],prefix:"译研.app",destination:dir)}catch{rejected=true}
+            check(rejected,"Unsafe archive accepted: "+fixture)
+            check(try! FileManager.default.contentsOfDirectory(atPath:dir.path).isEmpty,"Rejected archive extracted content")
+            print("PASS rejected archive cannot extract content: "+fixture)
+        }
+        print("20 installer checks passed")
     }
 }

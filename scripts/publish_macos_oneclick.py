@@ -21,7 +21,7 @@ VERSION=os.environ.get('PAPERBRIDGE_RELEASE_VERSION',CONFIG['version'])
 assert re.fullmatch(r'\d+\.\d+\.\d+',VERSION)
 TAG=f'v{VERSION}-macos';MODEL_TAG=CONFIG['model_tag']
 APP=ROOT/'dist/release/译研.app'
-BASE=f'https://github.com/{common.REPO}/releases/download/'
+BASE=f'https://github.com/{common.DOWNLOAD_REPO}/releases/download/'
 
 
 def find_release(tag):
@@ -97,6 +97,8 @@ def build_app():
     out=ROOT/'dist/macos-oneclick';out.mkdir(parents=True,exist_ok=True)
     archive=out/f'Yiyan-{VERSION}-AppleSilicon-App.tar.gz'
     with tarfile.open(archive,'w:gz',compresslevel=3,dereference=False) as a:a.add(APP,arcname='译研.app')
+    subprocess.run([sys.executable,str(ROOT/'scripts/test_macos_installer.py'),'--archive',str(archive)],check=True)
+    (out/'MACOS-ARCHIVE-VALIDATION.json').write_text(json.dumps({'version':VERSION,'inherited_locale':'C','actual_application_archive_extracted':True,'extracted_app_signature_verified':True,'installer_checks':20},indent=2)+'\n')
     manifest={'schema':1,'version':VERSION,'minimum_macos':CONFIG['minimum_macos'],'architecture':'arm64','app':{'name':archive.name,'bytes':archive.stat().st_size,'sha256':common.sha(archive),'url':BASE+TAG+'/'+archive.name},'models_url':BASE+MODEL_TAG+'/macos-models.json'}
     (out/'macos-app.json').write_text(json.dumps(manifest,indent=2)+'\n')
     helper=out/'Installer/安装译研.app';build_installer(helper,release_manifest=out/'macos-app.json')
@@ -113,7 +115,9 @@ def build_app():
     target=release(TAG,'译研 · Mac 一键安装与独立更新 · 4B / 14B 自选')
     for p in [*out.glob('*.*'),*out.glob('screenshots/*.png'),ROOT/'dist/release'/f'PaperBridge-{VERSION}-Source.zip',ROOT/'dist/release'/f'PaperBridge-{VERSION}-ThirdPartySource.zip']:
         common.upload(target['id'],p)
-    common.api(f"/repos/{common.REPO}/releases/{target['id']}",{'body':(ROOT/'docs/RELEASE_v1.8.0_MACOS.md').read_text().replace('/v1.8.0-macos/','/'+TAG+'/')},method='PATCH')
+    notes=ROOT/'docs'/f'RELEASE_v{VERSION}_MACOS.md'
+    if not notes.is_file():notes=ROOT/'docs/RELEASE_v1.8.0_MACOS.md'
+    common.api(f"/repos/{common.REPO}/releases/{target['id']}",{'body':notes.read_text().replace('/v1.8.0-macos/','/'+TAG+'/')},method='PATCH')
 
 
 def publish_app():
@@ -140,6 +144,10 @@ def promote_app():
     assert manifest['schema']==1 and manifest['version']==VERSION
     assert build['first_launch_passed'] and build['models_outside_application'] and not build['application_has_models']
     assert launch['loaded'] and launch['status']['layout_installed']
+    evidence=records['MACOS-ARCHIVE-VALIDATION.json']
+    common.download(evidence['browser_download_url'],ROOT/'.cache/MACOS-ARCHIVE-VALIDATION.json',evidence['digest'].removeprefix('sha256:'),evidence['size'])
+    archive_check=json.loads((ROOT/'.cache/MACOS-ARCHIVE-VALIDATION.json').read_text())
+    assert archive_check['version']==VERSION and archive_check['actual_application_archive_extracted'] and archive_check['extracted_app_signature_verified'] and archive_check['inherited_locale']=='C'
     archive=records[manifest['app']['name']]
     assert archive['digest']=='sha256:'+manifest['app']['sha256'] and archive['size']==manifest['app']['bytes']
     channel={'schema':1,'manifest_url':BASE+TAG+'/macos-app.json'}

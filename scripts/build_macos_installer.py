@@ -1,5 +1,6 @@
 """Build the native model-selecting Mac installer and its small downloadable DMG."""
 import argparse
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -23,7 +24,8 @@ def build(output, dmg=None, release_manifest=None):
     icon=ROOT/'desktop/macos/AppIcon.icns'
     if not icon.is_file(): icon=ROOT/'dist/译研.app/Contents/Resources/AppIcon.icns'
     shutil.copy2(icon,resources/'AppIcon.icns')
-    (output/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleName':'安装译研','CFBundleDisplayName':'安装译研','CFBundleIdentifier':'org.paperbridge.yiyan.installer','CFBundleExecutable':'YiyanSetup','CFBundlePackageType':'APPL','CFBundleShortVersionString':'1.8.3','CFBundleVersion':'183','CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':'12.0','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication'}))
+    version=json.loads((ROOT/'release-assets/macos-version.json').read_text())['version']
+    (output/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleName':'安装译研','CFBundleDisplayName':'安装译研','CFBundleIdentifier':'org.paperbridge.yiyan.installer','CFBundleExecutable':'YiyanSetup','CFBundlePackageType':'APPL','CFBundleShortVersionString':version,'CFBundleVersion':version.replace('.',''),'CFBundleIconFile':'AppIcon','LSMinimumSystemVersion':'12.0','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication'}))
     subprocess.run(['codesign','--force','--deep','--sign','-',str(output)],check=True)
     subprocess.run(['codesign','--verify','--deep','--strict',str(output)],check=True)
     if dmg:
