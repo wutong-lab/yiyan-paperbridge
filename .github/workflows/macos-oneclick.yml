@@ -1,5 +1,5 @@
 name: Build Mac one-click installer and independent updates
-# Verify explicit session networking; system settings remain unchanged.
+# Verify UTF-8 archive installation and explicit session networking on the release commit.
 on:
   workflow_dispatch:
   push:

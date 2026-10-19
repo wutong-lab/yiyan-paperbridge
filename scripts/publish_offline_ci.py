@@ -44,8 +44,13 @@ def api(path, data=None, method=None):
         data=None if data is None else json.dumps(data).encode(), method=method,
         headers={"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
                  "Content-Type": "application/json", "User-Agent": "PaperBridge-release"})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return None if response.status == 204 else json.load(response)
+    except urllib.error.HTTPError as exc:
+        try: detail = json.loads(exc.read()).get('message', exc.reason)
+        except (ValueError, UnicodeError): detail = exc.reason
+        raise RuntimeError(f'GitHub API {exc.code} {path}: {detail}') from exc
 
 
 def sha(path):
