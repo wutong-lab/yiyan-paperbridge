@@ -1,5 +1,12 @@
 name: Publish Mac application update
 on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/macos-promote.yml]
+  workflow_run:
+    workflows: [Build Mac one-click installer and independent updates]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
@@ -10,13 +17,32 @@ permissions:
   contents: write
 jobs:
   publish:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: macos-stable-channel
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Verify built app and publish its update channel
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          PAPERBRIDGE_RELEASE_VERSION: ${{ inputs.version }}
-        run: python3 scripts/publish_macos_oneclick.py promote
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$REQUESTED_VERSION" ]; then export PAPERBRIDGE_RELEASE_VERSION="$REQUESTED_VERSION"; fi
+          python3 - <<'PY'
+          import sys,time
+          sys.path.insert(0,'scripts')
+          import publish_macos_oneclick as release
+          for attempt in range(90):
+              candidate=release.find_release(release.TAG)
+              if candidate and not candidate['draft']:break
+              print('Waiting for the validated Mac candidate '+release.VERSION,flush=True)
+              time.sleep(10)
+          else:raise RuntimeError('Mac candidate is not ready; stable channel remains unchanged')
+          release.promote_app()
+          PY
