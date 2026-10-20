@@ -1,13 +1,13 @@
 {
   "schema": 1,
-  "version": "1.14.0",
+  "version": "1.14.2",
   "minimum_macos": "26.2",
   "architecture": "arm64",
   "app": {
-    "name": "Yiyan-1.14.0-AppleSilicon-App.tar.gz",
-    "bytes": 572927483,
-    "sha256": "4f0b82dff4580d89c493c80213c19b3f196e9348b2d33d067a1238933a6ec017",
-    "url": "https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.14.0-macos/Yiyan-1.14.0-AppleSilicon-App.tar.gz"
+    "name": "Yiyan-1.14.2-AppleSilicon-App.tar.gz",
+    "bytes": 572952165,
+    "sha256": "9e2e18f6dbbb60d505e2378d3a06f79a7b2cd7192bf778f612c81cc67efdbe94",
+    "url": "https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.14.2-macos/Yiyan-1.14.2-AppleSilicon-App.tar.gz"
   },
   "models_url": "https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.8.0-macos-models/macos-models.json"
 }
