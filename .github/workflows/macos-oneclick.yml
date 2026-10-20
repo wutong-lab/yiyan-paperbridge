@@ -54,7 +54,7 @@ jobs:
       - name: Verify native resumable downloader
         run: |
           .venv/bin/python -m pip install pytest
-          .venv/bin/python -m pytest tests/test_quality_performance.py tests/test_reference_sections.py tests/test_table_policy.py -q
+          .venv/bin/python -m pytest tests/test_quality_performance.py tests/test_reference_sections.py tests/test_table_policy.py tests/test_translation_quality_regressions.py tests/test_windows.py -q
           .venv/bin/python scripts/test_macos_installer.py
       - name: Build, verify first launch, capture real UI and upload model-free app
         env:

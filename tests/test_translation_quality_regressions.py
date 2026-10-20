@@ -81,3 +81,15 @@ def test_math_unity_translation_succeeds_without_a_numeric_exception(monkeypatch
     assert result == "该比值高于一。"
     assert not notes
     assert len(inputs) == 1
+
+
+@pytest.mark.parametrize("response", [
+    {"SOURCE": "注：计数指独立观测。"},
+    {"translation": ""},
+    {"translation": "Note: Independent observations."},
+])
+def test_invalid_output_contract_never_becomes_an_accepted_translation(monkeypatch, response):
+    local = LocalTranslator()
+    monkeypatch.setattr(local, "_generate_json", lambda messages, budget, response_schema=None: response)
+    with pytest.raises(TranslationError, match="完整中文译文"):
+        local._generate([{"role": "user", "content": "A scientific note."}], 256)

@@ -98,6 +98,28 @@ def test_inference_rejects_truncation_and_uses_private_loopback_client(tmp_path)
     engine.close()
 
 
+def test_translation_schema_is_sent_to_the_owned_local_engine(tmp_path, monkeypatch):
+    from paperbridge import translator
+    local = translator.LocalTranslator()
+    monkeypatch.setattr(translator, "WINDOWS", True)
+    engine = GGUFInference(tmp_path)
+    engine.load = lambda: None
+    requests = []
+    def post(path, json):
+        requests.append(json)
+        return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {
+            "choices": [{"finish_reason": "stop", "message": {"content": '{"translation":"注：计数指独立观测。"}'}}]})
+    engine.client = SimpleNamespace(post=post, close=lambda: None)
+    local.inference = engine
+    assert local._generate([{"role": "user", "content": '{"SOURCE":"A scientific note."}'}], 256) == "注：计数指独立观测。"
+    schema = requests[0]["response_format"]["schema"]
+    assert requests[0]["response_format"]["type"] == "json_object"
+    assert schema["required"] == ["translation"]
+    assert schema["properties"]["translation"] == {"type": "string", "minLength": 1}
+    assert schema["additionalProperties"] is False
+    engine.close()
+
+
 def test_worker_blocks_external_and_unowned_local_connections(monkeypatch):
     import socket
     calls = []
@@ -145,7 +167,7 @@ def test_windows_translator_shares_scientific_validation_and_releases_process(mo
     local = module.LocalTranslator(tmp_path)
     local.inference.load = lambda: None
     local.installed = lambda: True
-    local.inference.generate = lambda messages, max_tokens: '{"translation":"超新星光变曲线"}'
+    local.inference.generate = lambda messages, max_tokens, response_schema=None: '{"translation":"超新星光变曲线"}'
     local.load()
     assert local._generate([{"role":"user", "content":"Supernova light curves"}], 100) == "超新星光变曲线"
     local.unload()

@@ -139,16 +139,19 @@ class GGUFInference:
                 self.close()
                 raise failure from None
 
-    def generate(self, messages, max_tokens):
+    def generate(self, messages, max_tokens, response_schema=None):
         self.load()
         started = time.perf_counter()
         self._activity("generating", f"正在使用 {self.stats.get('device') or '本地模型'} 生成译文，单次超过 3 分钟会停止并提示")
+        response_format = {"type": "json_object"}
+        if response_schema is not None:
+            response_format["schema"] = response_schema
         try:
             response = self.client.post("/v1/chat/completions", json={
                 "model": self.alias, "messages": messages, "max_tokens": max_tokens,
                 "temperature": 0, "seed": 0, "stream": False,
                 "chat_template_kwargs": {"enable_thinking": False},
-                "response_format": {"type": "json_object"}, "cache_prompt": True})
+                "response_format": response_format, "cache_prompt": True})
             response.raise_for_status()
         except httpx.TimeoutException:
             self.close()

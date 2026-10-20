@@ -248,7 +248,9 @@ class DeepSeekTranslator(LocalTranslator):
     def unload(self):
         self.model = self.tokenizer = None
 
-    def _generate_json(self, messages, max_tokens):
+    def _generate_json(self, messages, max_tokens, response_schema=None):
+        # Provider capabilities remain controlled by the saved API profile;
+        # llama.cpp's schema extension is only sent to the owned local engine.
         result = self.inference.generate(messages, max_tokens)
         try:
             value = parse_model_response(result)

@@ -13,6 +13,12 @@ from .terminology import atomic_terms, enforced_terms, counted_terms, geometric_
 from .paths import ROOT, WINDOWS
 MODEL_ID = "Qwen/Qwen3-4B-GGUF" if WINDOWS else "Qwen/Qwen3-4B-MLX-4bit"
 MODEL_REVISION = "main"  # Installer records the downloaded snapshot SHA.
+TRANSLATION_SCHEMA = {
+    "type": "object",
+    "properties": {"translation": {"type": "string", "minLength": 1}},
+    "required": ["translation"],
+    "additionalProperties": False,
+}
 MODEL_DIR = ROOT / "models" / "qwen3-4b"
 if WINDOWS:
     from .windows_models import model_directory
@@ -318,10 +324,10 @@ class LocalTranslator:
                 gc.collect()
                 mx.clear_cache()
 
-    def _generate_json(self, messages: list, max_tokens: int) -> dict:
+    def _generate_json(self, messages: list, max_tokens: int, response_schema=None) -> dict:
         if WINDOWS:
             try:
-                result = self.inference.generate(messages, max_tokens)
+                result = self.inference.generate(messages, max_tokens, response_schema=response_schema)
             except Exception as exc:
                 from .local_runtime import LocalRuntimeError
                 if isinstance(exc, LocalRuntimeError):
@@ -349,7 +355,10 @@ class LocalTranslator:
             raise TranslationError("模型未返回有效数据，已保留原文") from exc
 
     def _generate(self, messages: list, max_tokens: int) -> str:
-        parsed = self._generate_json(messages, max_tokens)
+        # An unconstrained object can echo the SOURCE key even when its value
+        # is Chinese. Constrain local GGUF generation to the requested field;
+        # the existing Chinese, quantity and formula checks still run below.
+        parsed = self._generate_json(messages, max_tokens, response_schema=TRANSLATION_SCHEMA)
         try:
             translated = parsed.get("translation")
             if not isinstance(translated, str) or not translated.strip():

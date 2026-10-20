@@ -113,7 +113,7 @@ def test_fatal_model_error_is_not_retried_as_bad_translation(monkeypatch, tmp_pa
     local.installed = lambda: True
     local.model = local.inference
     calls = []
-    def fail(*a):
+    def fail(*a, **kwargs):
         calls.append(1)
         raise runtime.LocalRuntimeError("insufficient_memory", "内存不足")
     local.inference.generate = fail
