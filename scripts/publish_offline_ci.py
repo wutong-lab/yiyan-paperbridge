@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = "wutong-lab/yiyan-paperbridge"
 # Existing clients pin this canonical asset prefix. GitHub redirects it to the
 # renamed repository; retain it in manifests until those clients migrate.
-DOWNLOAD_REPO = "wutong-lab/yiyan-paperbridge"
+DOWNLOAD_REPO = "hengyuwu-dot/yiyan-paperbridge"
 TAG = "v1.4.0-offline-14b"
 APP = ROOT / "dist/release/译研.app"
 PREFIX = "Yiyan-1.4.0-AppleSilicon-Offline-14B.tar.gz"

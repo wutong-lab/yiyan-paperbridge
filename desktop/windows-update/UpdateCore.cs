@@ -23,7 +23,7 @@ public sealed record AppRelease(int Schema, string Version, string Platform, Ass
     {
         if (Schema != 1 || Platform != "windows-x64" || !Regex.IsMatch(Version,"^\\d+\\.\\d+\\.\\d+$") || !System.Version.TryParse(MinimumInstalledVersion,out _) ||
             Archive.Name != $"Yiyan-{Version}-Windows-x64-App.zip" || Archive.Bytes <= 0 || !Regex.IsMatch(Archive.Sha256,"^[a-f0-9]{64}$") ||
-            Archive.Url != $"https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v{Version}-windows-update/{Archive.Name}" ||
+            (Archive.Url != $"https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v{Version}-windows-update/{Archive.Name}" && Archive.Url != $"https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v{Version}-windows-update/{Archive.Name}") ||
             ExpandedBytes <= 0 || ExpandedBytes > 12_000_000_000 || Components.Length==0 || Components.Distinct(StringComparer.OrdinalIgnoreCase).Count()!=Components.Length ||
             Components.Any(c=>!AllowedComponents.Contains(c)) || !Components.Contains("Engine") || !Components.Contains("Yiyan.exe") || !Components.Contains("Updater") ||
             Components.Contains("Runtime") != RuntimeIncluded)
@@ -40,7 +40,7 @@ public static class UpdateNetwork
     public static string BinaryUrl(Asset asset,int attempt) => ((attempt%3) switch {1=>"https://ghfast.top/",2=>"https://gh-proxy.com/",_=>""})+asset.Url;
     public static async Task<AppRelease> Latest(HttpClient http,CancellationToken token=default,string? testManifest=null)
     {
-        if(testManifest is not null&&!Regex.IsMatch(testManifest,"^https://github\\.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v\\d+\\.\\d+\\.\\d+-windows-update/windows-app\\.json$"))throw new InvalidDataException("测试更新源无效。");
+        if(testManifest is not null&&!Regex.IsMatch(testManifest,"^https://github\\.com/(?:hengyuwu-dot|wutong-lab)/yiyan-paperbridge/releases/download/v\\d+\\.\\d+\\.\\d+-windows-update/windows-app\\.json$"))throw new InvalidDataException("测试更新源无效。");
         Exception? failure=null;
         foreach (string url in testManifest is null?Metadata:new[]{testManifest})
         {

@@ -9,7 +9,7 @@ permissions:
   contents: read
 concurrency:
   group: macos-oneclick-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   models:
     runs-on: ubuntu-latest
