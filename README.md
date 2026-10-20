@@ -6,11 +6,11 @@
 
 Mac 与 Windows 都提供 **一键安装向导**：选择 4B 或 14B 后自动准备完整环境，装好即可离线翻译。Mac 与 Windows 后续更新都继续使用已安装模型，论文、译稿与设置也会保留。
 
-**[Mac 一键安装](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.1-macos/Yiyan-Mac-OneClick-Setup.dmg) · [Windows 一键安装](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.1-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[Mac 安装教程](docs/MAC_INSTALL.md) · [Windows 安装教程](docs/WINDOWS_INSTALL.md)** · **[使用方法](#开始阅读)**
+**[Mac 一键安装](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-macos/Yiyan-Mac-OneClick-Setup.dmg) · [Windows 一键安装](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[Mac 安装教程](docs/MAC_INSTALL.md) · [Windows 安装教程](docs/WINDOWS_INSTALL.md)** · **[使用方法](#开始阅读)**
 
 ![译研 Mac 论文工作室](docs/images/workspace.jpg)
 
-## 1.14.1：参考文献识别与全文阅读改进
+## 1.14.2：参考文献识别与全文阅读改进
 
 在工作室的 **API 配置** 中添加 DeepSeek、通义千问、硅基流动或自定义 OpenAI 兼容接口，填写密钥、地址和模型，点击 **保存并测试**。以后翻译时直接选择已保存的服务，也可以继续选择本地 4B / 14B。
 
@@ -55,7 +55,7 @@ Mac 使用系统钥匙串保存密钥，Windows 使用当前用户的 DPAPI 加�
 
 ## 安装到 Mac：选择模型，一键准备
 
-**[下载 Mac 一键安装器（约 1.3MB）](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.1-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [GitHub 原始下载](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.1-macos/Yiyan-Mac-OneClick-Setup.dmg) · [安装与更新教程](docs/MAC_INSTALL.md)
+**[下载 Mac 一键安装器（约 1.3MB）](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [GitHub 原始下载](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-macos/Yiyan-Mac-OneClick-Setup.dmg) · [安装与更新教程](docs/MAC_INSTALL.md)
 
 ![Mac 一键安装器：4B / 14B 自选](docs/images/macos-setup.png)
 
@@ -98,7 +98,7 @@ light curve = 光变曲线
 
 ![Windows 一键安装：选择 4B 或 14B](docs/images/windows-setup.png)
 
-**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.1-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [安装与使用教程](docs/WINDOWS_INSTALL.md)
+**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [安装与使用教程](docs/WINDOWS_INSTALL.md)
 
 1. 双击打开 **Yiyan-Windows-OneClick-Setup.exe**。
 2. 选择 **4B 标准版**或 **14B 精译版**，点击 **下载并安装**。

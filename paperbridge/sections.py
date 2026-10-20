@@ -94,11 +94,38 @@ def _paragraph_gap(lines, index):
     return index > 0 and lines[index]['bbox'][1] - lines[index - 1]['bbox'][3] > .2 * size
 
 
-def _heading_events(blocks):
+def _table_reference_labels(blocks):
+    """A References cell beside other short column labels is not a section."""
+    lines = [line for block in blocks for line in block.get('lines', [])]
+    excluded = set()
+    for line in lines:
+        if not REFERENCE_TITLE.fullmatch(block_text({'lines': [line]}).strip()):
+            continue
+        box = fitz.Rect(line['bbox'])
+        peers = []
+        for other in lines:
+            if other is line:
+                continue
+            candidate = fitz.Rect(other['bbox'])
+            text = block_text({'lines': [other]}).strip()
+            if (abs((candidate.y0 + candidate.y1 - box.y0 - box.y1) / 2) <= .4 * box.height
+                    and (candidate.x1 < box.x0 or candidate.x0 > box.x1)
+                    and 1 <= len(text.split()) <= 5 and not re.search(r'[.!?;]$', text)):
+                peers.append(other)
+        # Three separate label cells distinguish a table header from the two
+        # simultaneous section headings possible in a two-column article.
+        if len(peers) >= 2:
+            excluded.add(id(line))
+    return excluded
+
+
+def _heading_events(blocks, excluded=()):
     events = []
     for block in blocks:
         lines = block['lines']
         for index, line in enumerate(lines):
+            if id(line) in excluded:
+                continue
             text = block_text({'lines': [line]}).strip()
             kind = ('references' if REFERENCE_TITLE.fullmatch(text) else
                     'appendix' if APPENDIX_TITLE.fullmatch(text) else None)
@@ -123,7 +150,7 @@ def _heading_events(blocks):
                            'spanning': block['column'] == -1})
         # A wrapped title such as "Literature\ncited" still has to match the
         # complete title; never match a keyword inside a sentence or paper title.
-        if len(lines) > 1 and REFERENCE_TITLE.fullmatch(block_text(block).strip()):
+        if len(lines) > 1 and not any(id(line) in excluded for line in lines) and REFERENCE_TITLE.fullmatch(block_text(block).strip()):
             y = block['bbox'][1]
             if y >= 25:
                 events.append({'column': max(0, block['column']), 'y': y, 'kind': 'references',
@@ -220,7 +247,7 @@ def detect_sections(path):
             columns = column_bounds(page, blocks)
             layouts.append({"page": index + 1, "columns": columns})
             logical_blocks = column_text_blocks(blocks, columns)
-            events = _heading_events(logical_blocks)
+            events = _heading_events(logical_blocks, _table_reference_labels(blocks))
             spanning = sorted((e for e in events if e['spanning']), key=lambda e: e['y'])
             top = 0
             # A full-width title starts a new horizontal band. Process columns

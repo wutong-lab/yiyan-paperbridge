@@ -240,3 +240,22 @@ def test_reference_columns_do_not_split_a_centred_footer_number(tmp_path):
     regions = detect_sections(path)['reference_regions']
     assert is_reference_region(1, entry, regions)
     assert not any(fitz.Rect(r['bbox']).intersects(fitz.Rect(footer)) for r in regions)
+
+
+def test_references_in_a_table_header_does_not_hide_later_body(tmp_path):
+    path = tmp_path / 'reference-table-label.pdf'
+    with fitz.open() as doc:
+        page = doc.new_page()
+        for x, text in [(40, 'Detector'), (220, 'Data set'), (420, 'References')]:
+            page.insert_text((x, 80), text, fontsize=10)
+        page.insert_text((420, 92), 'Smith, A. 2020.', fontsize=10)
+        page.insert_text((40, 240), 'These scientific body paragraphs must remain translatable.', fontsize=10)
+        body = _line_box(page, 'These scientific')
+        page.insert_text((40, 400), 'References\nJones, B. 2021. A scientific method.', fontsize=10)
+        entry = _line_box(page, 'Jones,')
+        doc.save(path)
+    sections = detect_sections(path)
+    assert len(sections['section_headings']) == 1
+    assert sections['section_headings'][0]['y'] > 350
+    assert not is_reference_region(1, body, sections['reference_regions'])
+    assert is_reference_region(1, entry, sections['reference_regions'])
