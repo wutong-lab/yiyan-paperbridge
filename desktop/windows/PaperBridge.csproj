@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Yiyan</AssemblyName>
-    <Version>1.13.0</Version>
+    <Version>1.14.0</Version>
     <Product>译研 PaperBridge</Product>
     <Description>本地 SCI 论文翻译与中英对照阅读</Description>
     <ApplicationIcon>AppIcon.ico</ApplicationIcon>

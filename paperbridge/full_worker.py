@@ -230,6 +230,7 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     save_lock = threading.RLock()
     context = threading.local()
     job.update(status="running", progress=0, message="正在识别完整段落、行内公式和图表区域", cancel_requested=False)
+    job.pop('validation_progress', None)
     job["warnings"] = [w for w in job.get("warnings", []) if "结构检查发现需核对" not in w.get("message", "")]
 
     def save():
@@ -714,7 +715,9 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
         if cancelled():
             cfg.cancel_translation()
         if "overall_progress" in event:
-            job["progress"] = round(min(98, event["overall_progress"]), 1)
+            # Reserve visible progress for compression, export and independent
+            # structural checks after BabelDOC has completed typesetting.
+            job["progress"] = round(min(94, event["overall_progress"] * .94), 1)
             if "Translate" not in event.get("stage", ""):
                 job["message"] = "正在识别段落与公式、排版并检查页面"
             save()
@@ -738,6 +741,9 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
         if cancelled():
             raise TranslationError("已停止，未发布新的 PDF")
         # Keep the previous output readable until every export step succeeds.
+        job.update(status='exporting', progress=95, message='正文排版完成，正在整理图表并压缩 PDF')
+        job.pop('local_runtime', None)
+        save()
         translated_path = staging / "translated.pdf"
         shutil.copyfile(result.mono_pdf_path, translated_path)
         from .graphics import restore_untouched_forms, make_alternating_pdf
@@ -746,7 +752,11 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
         job["restored_reference_regions"] = restore_reference_text(folder / "original.pdf", translated_path, reference_regions)
         from .pdf_compaction import compact_pdf
         compression = compact_pdf(translated_path)
+        job.update(progress=96, message='正在生成中英逐页对照 PDF')
+        save()
         make_alternating_pdf(folder / "original.pdf", translated_path, staging / "bilingual.pdf")
+        job.update(progress=97, message='正在确认 PDF 中的中文译文')
+        save()
         with fitz.open(translated_path) as translated:
             page_chinese = {}
             for seg in records.values():
@@ -795,16 +805,31 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                                     "model_api": api_source, "api_requests_this_run": api_mode,
                                     "network_blocked_during_translation": not api_mode}
         from .quality import inspect_pdf
-        evidence = inspect_pdf(folder / "original.pdf", translated_path, list(records.values()))
+        def validation_progress(event):
+            phase = {'image_inventory': '读取图像信息', 'images': '校验图像',
+                     'vectors': '校验图表线条', 'formulae': '校验公式', 'page_complete': '页面校验完成'}[event['phase']]
+            detail = f" · {event['completed']:,}/{event['total']:,}" if event['phase'] == 'images' and event['total'] else ''
+            if event.get('unit') == 'image_tiles':
+                detail += ' 个图像分块'
+            elif event['phase'] == 'images' and event['total']:
+                detail += ' 处图像区域'
+            job.update(status='exporting', progress=round(97 + 2.5 * event['fraction'], 1),
+                       message=f"{phase}：第 {event['page']}/{event['pages']} 页{detail}",
+                       validation_progress=event)
+            save()
+        evidence = inspect_pdf(folder / "original.pdf", translated_path, list(records.values()),
+                               progress=validation_progress, cancelled=cancelled)
         write_json(staging / "quality.json", evidence)
         job["export_report"]["structural_checks_passed"] = evidence["structural_checks_passed"]
         job["export_report"]["structural_review_pages"] = evidence.get("failed_pages", [])
+        job["export_report"]["validation_performance"] = evidence.get('performance', {})
         if not evidence["structural_checks_passed"]:
             job["warnings"].append({"page": 0, "message": "结构检查发现需核对的页面：" + ", ".join(map(str, evidence.get("failed_pages", [])))})
         if cancelled():
             raise TranslationError("已停止，未发布新的 PDF")
         publish_export(staging, folder)
         output_published = True
+        job['export_report']['elapsed_seconds'] = round(time.time() - started, 1)
         job.update(status="complete", progress=100, has_output=True)
         job["message"] = completion_message(sum(has_issues(s, s.get("translation_audit", [])) for s in records.values())) if not layout_test else "排版诊断已完成，未执行翻译"
         save()

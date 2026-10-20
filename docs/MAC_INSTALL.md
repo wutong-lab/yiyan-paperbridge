@@ -1,6 +1,6 @@
 # 译研 Mac 安装与更新教程
 
-**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
+**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.0-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
 
 打开安装器，选择 4B 或 14B，点击“下载并安装”。应用、所选模型、字体和排版环境会自动装好，之后可直接离线使用。
 

@@ -569,6 +569,7 @@ function drawJob() {
   const figures = job.pages.reduce((n,p) => n + p.images,0), tables = job.table_count ?? job.pages.reduce((n,p) => n + p.tables,0);
   $('docInfo').textContent = `${job.page_count} 页 · ${job.candidates} 个可翻译区域 · ${figures} 个嵌入图像 · ${tables} 个检测到的表格`;
   $('jobStatus').textContent = statuses[job.status] || job.status; $('jobMessage').textContent = job.message;
+  if(job.status === 'exporting' && job.validation_progress) $('jobStatus').textContent = '正在校验';
   const failure = job.status === 'failed' && job.failure?.kind === 'local_runtime';
   const localActivity = busy() && job.settings.provider !== 'api' && job.settings.provider !== 'deepseek' && job.local_runtime;
   $('runtimeNotice').hidden = !failure && !localActivity;

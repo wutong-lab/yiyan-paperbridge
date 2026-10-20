@@ -11,7 +11,7 @@ import subprocess
 import textwrap
 
 CODE = r'''
-import json, secrets, threading
+import json, os, secrets, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from paperbridge.api_profiles import ProfileManager
