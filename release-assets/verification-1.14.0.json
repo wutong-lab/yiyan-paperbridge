@@ -1,0 +1,32 @@
+{
+  "version": "1.14.0",
+  "source_commit": "866380c6682beb116db068ea8ec7b14180784e6d",
+  "python_tests_passed": 344,
+  "javascript_tests_passed": 17,
+  "density_fixture_image_objects": 27284,
+  "macos": {
+    "architecture": "Apple Silicon",
+    "native_installation_passed": true,
+    "native_ui_and_api_settings_loaded": true,
+    "model_preserved_during_update": true,
+    "offline_4b_pdf_export_passed": true,
+    "synthetic_sample_pages": 1,
+    "synthetic_sample_seconds": 13.2,
+    "custom_terminology_passed": true
+  },
+  "windows": {
+    "native_installation_passed": true,
+    "native_menu_update_passed": true,
+    "model_preserved_during_update": true,
+    "offline_4b_cpu_pdf_export_passed": true,
+    "synthetic_sample_pages": 1,
+    "synthetic_sample_seconds": 76.2,
+    "native_dpapi_roundtrip_passed": true,
+    "saved_profile_reopened": true,
+    "api_protocol_fixture": "localhost Chat Completions SSE",
+    "api_protocol_and_usage_passed": true,
+    "insufficient_14b_memory_blocked": true,
+    "workflow": "https://github.com/wutong-lab/yiyan-paperbridge/actions/runs/39362617812"
+  },
+  "macos_build_workflow": "https://github.com/wutong-lab/yiyan-paperbridge/actions/runs/39362617727"
+}
