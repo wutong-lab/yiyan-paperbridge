@@ -56,6 +56,14 @@ def worker(args):
     from paperbridge.full_worker import run
     from paperbridge.reference_restore import _same_pixels, _same_reference_text_and_positions
     from paperbridge.table_policy import TABLE_PRESERVED
+    if os.environ.get('PB_TABLE_DIAGNOSTIC') == '1':
+        from paperbridge.translator import LocalTranslator
+        record_failure = LocalTranslator._record_failure
+        def diagnostic_failure(self, messages, result, reason, max_tokens):
+            print(json.dumps({'synthetic_fixture_failure':True, 'reason':reason,
+                              'raw_response':result, 'source_message':messages[-1]['content']}, ensure_ascii=True), flush=True)
+            return record_failure(self, messages, result, reason, max_tokens)
+        LocalTranslator._record_failure = diagnostic_failure
     version = os.environ['PB_TABLE_VERSION']
     created = add_document(args.fixture.read_bytes(), 'Synthetic-table-validation.pdf')
     job = get_job(created['id'])
@@ -69,6 +77,12 @@ def worker(args):
     started = time.monotonic(); run(job['id'])
     folder = ROOT / 'data/jobs' / job['id']
     state = json.loads((folder / 'worker-state.json').read_text(encoding='utf-8'))
+    output = args.evidence / args.case; output.mkdir(parents=True, exist_ok=True)
+    # Retain evidence before assertions so a failed validation can be diagnosed.
+    for name in ['original.pdf', 'translated.pdf', 'bilingual.pdf', 'worker-state.json']:
+        if (folder/name).exists(): shutil.copy2(folder/name, output/name)
+    if (folder/'translation-failures').exists():
+        shutil.copytree(folder/'translation-failures',output/'synthetic-failures',dirs_exist_ok=True)
     assert state['status'] == 'complete', state.get('message')
     assert state['export_report']['structural_checks_passed'], state['export_report']
     table_segments = [s for s in state['segments'] if s.get('table_content')]
@@ -100,8 +114,6 @@ def worker(args):
     assert caption and all(s.get('translation') and s.get('exported') for s in caption), caption
     assert notes and all(s.get('translation') and s.get('exported') for s in notes), notes
     with fitz.open(folder/'bilingual.pdf') as bilingual: assert len(bilingual) == 4
-    output = args.evidence / args.case; output.mkdir(parents=True, exist_ok=True)
-    for name in ['original.pdf', 'translated.pdf', 'bilingual.pdf']: shutil.copy2(folder/name, output/name)
     report = {'version': version, 'platform': sys.platform, 'case': args.case,
         'translate_tables': args.case == 'on', 'profile': 'standard', 'real_4b_inference': True,
         'mock_translation': False, 'external_network_blocked': True,
@@ -123,6 +135,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--app', type=Path); p.add_argument('--bundle', type=Path)
     p.add_argument('--engine', type=Path, help='Explicit development-only source override')
+    p.add_argument('--diagnostic', action='store_true')
     p.add_argument('--data', type=Path, required=True); p.add_argument('--evidence', type=Path, required=True)
     p.add_argument('--fixture', type=Path); p.add_argument('--case', choices=['off','on'])
     p.add_argument('--version', required=True)
@@ -148,12 +161,14 @@ def main():
     environment = {**os.environ, 'PAPERBRIDGE_HOME': str(args.data.resolve()),
         'PAPERBRIDGE_APP_VERSION': args.version, 'PB_TABLE_VERSION': args.version,
         'PB_TABLE_SOURCE_OVERRIDE': '1' if args.engine else '0',
+        'PB_TABLE_DIAGNOSTIC': '1' if args.diagnostic else '0',
         'PYTHONUTF8': '1', 'PYTHONDONTWRITEBYTECODE': '1',
         'HF_HUB_OFFLINE': '1', 'TRANSFORMERS_OFFLINE': '1'}
     if args.bundle:
         environment.update(PAPERBRIDGE_WINDOWS_BUNDLE=str(resources),
             PAPERBRIDGE_LLAMA_DIR=str(resources/'Runtime/llama'), PAPERBRIDGE_CPU_ONLY='1')
     bridge = 'import sys;sys.path.insert(0,sys.argv.pop(1));target=sys.argv.pop(1);sys.argv[0]=target;import runpy;runpy.run_path(target,run_name="__main__")'
+    failed_cases = []
     for case in ['off','on']:
         command = [str(python), '-X', 'utf8', '-c', bridge, str(engine), str(Path(__file__).resolve()),
                    '--data', str(args.data.resolve()), '--evidence', str(args.evidence.resolve()),
@@ -162,7 +177,11 @@ def main():
             result = subprocess.run(command, cwd=engine, env=environment, stdout=log, stderr=log, timeout=2700)
         if result.returncode:
             print((args.evidence/f'{case}.log').read_text(encoding='utf-8', errors='replace')[-10000:])
-            raise SystemExit(result.returncode)
+            if not args.diagnostic: raise SystemExit(result.returncode)
+            failed_cases.append(case)
+    if failed_cases:
+        (args.evidence/'DIAGNOSTIC-SUMMARY.json').write_text(json.dumps({'passed':False,'failed_cases':failed_cases}))
+        raise SystemExit(1)
     cases = [json.loads((args.evidence/case/'REPORT.json').read_text(encoding='utf-8')) for case in ['off','on']]
     report = {'version': args.version, 'platform': sys.platform, 'default_translate_tables': False,
               'actual_installed_runtime': True, 'real_4b_inference': True, 'cases': cases,

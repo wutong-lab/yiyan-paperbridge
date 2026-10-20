@@ -1,0 +1,59 @@
+name: Diagnose actual Windows table translation
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/windows-table-diagnostics.yml]
+permissions:
+  contents: read
+env:
+  PYTHONUTF8: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+jobs:
+  diagnose:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v6
+        with: {python-version: '3.12'}
+      - uses: actions/cache/restore@v5
+        id: installed
+        with:
+          path: 'C:\PaperBridge升级验证\译研'
+          key: windows-qa-installed-qwen4b-bc640142-runtime-babeldoc064
+      - name: Install the public 1.15.0 candidate
+        shell: pwsh
+        run: |
+          New-Item C:/WindowsTableDiagnostic -ItemType Directory -Force | Out-Null
+          Invoke-WebRequest 'https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.0-windows-update/Yiyan-Windows-OneClick-Setup.exe' -OutFile C:/WindowsTableDiagnostic/Setup.exe
+          $env:PAPERBRIDGE_WINDOWS_TEST_MANIFEST='https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.0-windows-update/windows-app.json'
+          $p=Start-Process C:/WindowsTableDiagnostic/Setup.exe -ArgumentList '--install-smoke standard --evidence C:\WindowsTableDiagnostic\Install --destination "C:\PaperBridge升级验证\译研" --cache C:\WindowsTableDiagnostic\Cache' -PassThru
+          $deadline=(Get-Date).AddMinutes(50)
+          while(-not $p.WaitForExit(30000)) {
+            if(Test-Path C:/WindowsTableDiagnostic/Install/setup-progress.json){Get-Content C:/WindowsTableDiagnostic/Install/setup-progress.json}
+            if((Get-Date)-gt $deadline){$p.Kill($true);throw 'Install timed out'}
+          }
+          if($p.ExitCode-ne 0){throw 'Install failed'}
+      - uses: actions/cache/save@v5
+        if: steps.installed.outputs.cache-hit != 'true'
+        with:
+          path: 'C:\PaperBridge升级验证\译研'
+          key: windows-qa-installed-qwen4b-bc640142-runtime-babeldoc064
+      - name: Capture synthetic response failures from the actual installed engine
+        shell: pwsh
+        run: |
+          foreach($exe in @('Runtime/Python/python.exe','Runtime/llama/cpu/llama-server.exe')) {
+            New-NetFirewallRule -DisplayName "PaperBridge diagnostic offline $exe" -Direction Outbound -Action Block -Program (Join-Path 'C:\PaperBridge升级验证\译研' $exe)|Out-Null
+          }
+          & 'C:\PaperBridge升级验证\译研\Runtime\Python\python.exe' -X utf8 scripts/smoke_table_translation.py --bundle 'C:\PaperBridge升级验证\译研' --data C:\WindowsTableDiagnostic\Data --evidence C:\WindowsTableDiagnostic\Results --version 1.15.0 --diagnostic
+          if($LASTEXITCODE-ne 0){throw 'Synthetic diagnosis captured translation failures'}
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: Windows-table-diagnostics
+          retention-days: 7
+          path: |
+            C:/WindowsTableDiagnostic/Results/**
+            C:/WindowsTableDiagnostic/Install/*.json
+          if-no-files-found: warn
