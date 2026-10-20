@@ -10,9 +10,9 @@ import re
 from statistics import median
 
 from .glossary import matched_terms, parse_custom
-from .sections import block_text, is_reference_region
+from .sections import block_text, prose_text_blocks
 
-VERSION = "document-context-2"
+VERSION = "document-context-3"
 BODY_LABELS = {"plain text", "text", "paragraph", "fallback_line", "body"}
 STOP = set("a an the and or of in on for from with without to by as at is are was were be been being this that these those we our their its it they which where when while if than then also can may might could would should will have has had not no only very more most less such same both each all any into over under between using used use based shown show given following however therefore respectively et al see figure table equation section appendix results result method methods paper work study studies model models parameter parameters case cases value values example examples number numbers different further first second third one two three four five six seven eight nine ten".split())
 STOP |= set("constrain constrains constrained calculate calculates calculated compute computes computed measure measures measured observe observes observed produce produces produced require requires required include includes included involve involves involved cause causes caused depend depends depended determine determines determined obtain obtains obtained allow allows allowed consider considers considered assume assumes assumed adopt adopts adopted find finds found infer infers inferred demonstrate demonstrates demonstrated indicate indicates indicated suggest suggests suggested predict predicts predicted yield yields yielded increase increases increased decrease decreases decreased".split())
@@ -87,10 +87,13 @@ def read_source_profile(path, sections):
             blocks = [b for b in page.get_text("dict", flags=fitz.TEXTFLAGS_DICT & ~fitz.TEXT_PRESERVE_IMAGES)["blocks"] if b.get("type") == 0]
             fonts = [s["size"] for b in blocks for line in b["lines"] for s in line["spans"] if len(re.findall(r"[A-Za-z]{2,}", s["text"])) >= 3]
             body_size = median(fonts) if fonts else 10
+            columns = next((p['columns'] for p in sections.get('page_columns', []) if p['page'] == n),
+                           [[0, page.rect.width]])
+            blocks = prose_text_blocks(n, blocks, columns, sections.get('reference_regions', []))
             for i, block in enumerate(blocks):
                 text = block_text(block).strip()
                 box = list(block["bbox"])
-                if box[1] < 25 or not text or is_reference_region(n, box, sections.get("reference_regions", [])):
+                if box[1] < 25 or not text:
                     continue
                 spans = [s for line in block["lines"] for s in line["spans"]]
                 size = max((s["size"] for s in spans), default=body_size)

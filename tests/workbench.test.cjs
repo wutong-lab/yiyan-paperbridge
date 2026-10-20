@@ -27,6 +27,13 @@ test('duration distinguishes the queue, full task, failed attempt, old records a
   assert.equal(ui.durationMetric({status:'complete',export_report:{elapsed_seconds:720.4}})[1],'12 分 0 秒');
   assert.equal(ui.formatDuration(null),'—');assert.equal(ui.formatBytes(null),'—');
 });
+test('re-export timing without an earlier translation timer cannot be labelled full translation time',()=>{
+  const job={status:'complete',timing:{kind:'export',status:'complete',finished_at:1,elapsed_seconds:8},export_report:{elapsed_seconds:8}};
+  assert.deepEqual(ui.durationMetric(job),['导出用时','8 秒','复用已有译文，重新生成 PDF']);
+  assert.equal(ui.durationMetric({...job,timing:{kind:'export',status:'complete',elapsed_seconds:null}})[1],'—');
+  assert.equal(ui.durationMetric({...job,status:'exporting'})[2],'正在重新生成 PDF');
+  assert.equal(ui.durationMetric({...job,status:'failed',timing:{...job.timing,status:'failed'}})[2],'本次导出未完成');
+});
 function storage(){const data=new Map();return {get length(){return data.size;},key:i=>[...data.keys()][i],getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};}
 
 test('reading pages survive reopening, stay separate by paper, and clamp after a shorter upload',()=>{

@@ -48,6 +48,7 @@ page.insert_text((50,60),'Scientific reading example',fontsize=15)
 page.insert_textbox(fitz.Rect(50,95,540,220),'The supernova light curve provides information about the progenitor. We estimate a posterior distribution using Bayesian inference.',fontsize=12)
 page.draw_rect(fitz.Rect(50,280,240,370),color=(0.2,0.5,0.3))
 page.insert_text((65,315),'Synthetic figure',fontsize=10)
+page.insert_text((50,450),'References\nSmith, A. 2020. Reference-only method.\nJournal of Scientific Research, 10.\nJones, B. 2021. Further measurements.',fontsize=9)
 created=add_document(doc.tobytes(),'Windows-offline-test.pdf'); doc.close()
 job=get_job(created['id']); job['settings'].update(engine='full',profile=profile,domain='astronomy',glossary='progenitor = 前身星',polish=False,pages='',auto_cleanup=False)
 save_job(job)
@@ -61,8 +62,18 @@ with fitz.open(folder/'translated.pdf') as pdf:
     assert any('\u3400' <= c <= '\u9fff' for c in text),text
 assert (folder/'bilingual.pdf').is_file()
 assert result['export_report']['structural_checks_passed']
+from paperbridge.reference_restore import _same_pixels, _same_reference_text_and_positions
+reference_regions=result['source_sections']['reference_regions']
+assert reference_regions
+with fitz.open(folder/'original.pdf') as source, fitz.open(folder/'translated.pdf') as translated:
+    for item in reference_regions:
+        a,b=source[item['page']-1],translated[item['page']-1];region=fitz.Rect(item['bbox'])
+        assert _same_reference_text_and_positions(a,b,region)
+        assert _same_pixels(a,b,region)
+reference_segments=[s for s in result['segments'] if s.get('reason')=='参考文献保留原文']
+assert reference_segments and all(not s.get('translation') and s['status']=='preserved' for s in reference_segments)
 assert not list((ROOT/'models').rglob('*.gguf')),'Model was unnecessarily duplicated'
-report={'platform':'Windows x64','edition':profile,'engine':'llama.cpp CPU','model':entry['file'],'model_sha256':h.hexdigest(),'model_in_install_directory':True,'model_copied_to_user_directory':False,'downloads_forbidden':True,'elapsed_seconds':round(time.perf_counter()-started,1),'status':result['status'],'has_chinese_pdf':True,'structure_passed':True,'export_report':result['export_report']}
+report={'platform':'Windows x64','edition':profile,'engine':'llama.cpp CPU','model':entry['file'],'model_sha256':h.hexdigest(),'model_in_install_directory':True,'model_copied_to_user_directory':False,'downloads_forbidden':True,'elapsed_seconds':round(time.perf_counter()-started,1),'status':result['status'],'has_chinese_pdf':True,'structure_passed':True,'reference_text_and_pixels_preserved':True,'reference_segments_excluded_from_translation':True,'export_report':result['export_report']}
 (ROOT/'WINDOWS-OFFLINE-SMOKE-REPORT.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 shutil.copy2(folder/'translated.pdf',ROOT/'Windows-offline-translated.pdf')
 shutil.copy2(folder/'bilingual.pdf',ROOT/'Windows-offline-bilingual.pdf')

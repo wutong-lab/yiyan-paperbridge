@@ -68,6 +68,8 @@
     if (timing?.finished_at && timing.kind !== 'export' && timing.status !== 'complete') return ['已用时间',formatDuration(timing.elapsed_seconds),'本次任务未完成'];
     const last = job.last_translation_timing;
     if (last) return [last.kind === 'repair' ? '复查用时' : '翻译用时',formatDuration(last.elapsed_seconds),last.legacy ? '已有任务记录' : '包含准备、翻译与导出'];
+    if (timing?.kind === 'export') return ['导出用时',formatDuration(timing.elapsed_seconds),
+      ['queued','running','exporting'].includes(job.status) ? '正在重新生成 PDF' : timing.status === 'complete' ? '复用已有译文，重新生成 PDF' : '本次导出未完成'];
     if (timing?.finished_at && timing.kind !== 'export') return ['已用时间',formatDuration(timing.elapsed_seconds),'本次任务未完成'];
     return ['翻译用时',formatDuration(job.export_report?.elapsed_seconds),job.export_report?.elapsed_seconds != null ? '已有任务记录' : '完成后显示'];
   }
