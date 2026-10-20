@@ -37,6 +37,7 @@ from .review import reading_segments, issue_notes, completion_message
 from .paths import CODE_ROOT, WINDOWS, hidden_process
 from .providers import credentials, DeepSeekClient, APIClient, MODELS, DEFAULT_MODEL, ProviderError
 from .api_profiles import ProfileManager
+from .table_policy import apply_table_policy
 from .secret_store import SecretStoreError
 from .local_runtime import assess_local, require_local, LocalRuntimeError, RuntimeWatchdog, ADVICE
 
@@ -427,6 +428,7 @@ def add_document(raw: bytes, name: str):
     job = {"id": job_id, "name": name, "created_at": time.time(), "status": "ready",
            "message": "论文已解析，可以开始翻译", "progress": 0, "cancel_requested": False,
            "settings": {}, "export_report": None, "has_output": False, **result}
+    apply_table_policy(job["segments"])
     with state_lock:
         jobs[job_id] = job
     save_job(job)
@@ -602,6 +604,7 @@ class Settings(BaseModel):
     domain: str = "general"
     glossary: str = Field(default="", max_length=50000)
     polish: bool = True
+    translate_tables: bool = False
     pages: str = Field(default="", max_length=500)
     engine: str = "full"
     profile: str = "precision"
@@ -664,6 +667,7 @@ def parse_pages(value, count):
 
 
 def make_export(job):
+    apply_table_policy(job["segments"], job.get("settings", {}).get("translate_tables", False))
     if job["settings"].get("engine") == "full":
         return run_full_translation(job["id"], replay=True)
     folder = DATA / job["id"]
@@ -802,6 +806,7 @@ def run_translation(job_id, settings, run_token=None, api_key=None):
         translator.configure_runtime(settings)
         glossary = active_document_terms(job, terms_for(settings["domain"], settings["glossary"]))
         selected = parse_pages(settings["pages"], job["page_count"])
+        apply_table_policy(job["segments"], settings.get("translate_tables", False))
         eligible = [s for s in job["segments"] if s["status"] != "preserved" and s["page"] in selected]
         job["status"] = "running"
         title_context = " ".join(s["source"] for s in job["segments"] if s["page"] <= 2 and s["status"] != "preserved")[:2400]
@@ -911,7 +916,7 @@ def start_translation(job_id: str, settings: Settings):
                 normalized.pop("api_model", None)
                 normalized.pop("api_profile_id", None)
                 normalized.pop("api_config", None)
-            return {k: v for k, v in normalized.items() if k not in {"auto_cleanup", "allow_slow_cpu", "force_cpu"}}
+            return {k: v for k, v in normalized.items() if k not in {"auto_cleanup", "allow_slow_cpu", "force_cpu", "translate_tables"}}
         old_translation_settings = comparable(job["settings"])
         new_translation_settings = comparable(proposed)
         if job["settings"] and old_translation_settings != new_translation_settings:
@@ -921,6 +926,7 @@ def start_translation(job_id: str, settings: Settings):
             for seg in job["segments"]:
                 if seg["status"] not in {"preserved", "edited"}:
                     seg.update(translation="", status="pending", reason="", notes=[], exported=False)
+        apply_table_policy(job["segments"], proposed.get("translate_tables", False))
         job.update(settings=proposed, status="queued", progress=0, message="等待 API 翻译" if settings.provider != "local" else "等待本地模型处理", cancel_requested=False, run_token=uuid.uuid4().hex)
         job.pop("failure", None)
         job.pop("local_runtime", None)

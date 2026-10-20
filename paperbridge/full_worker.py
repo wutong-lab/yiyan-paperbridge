@@ -29,10 +29,11 @@ from .review import has_issues, completion_message
 from .translator import ROOT, LocalTranslator, TranslationError
 from .paths import CODE_ROOT, WINDOWS
 from .local_runtime import LocalRuntimeError
+from .table_policy import apply_table_policy, is_table_content
 from .document_context import (DocumentContext, VERSION as CONTEXT_VERSION, read_source_profile,
                                term_candidates, glossary_entries, active_document_terms, signature, consistent_term_proposals)
 
-PIPELINE_VERSION = "full-9"
+PIPELINE_VERSION = "full-10"
 
 
 def write_json(path, data):
@@ -137,6 +138,7 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     folder = ROOT / "data" / "jobs" / job_id
     job = json.loads((folder / "job.json").read_text())
     settings = job["settings"]
+    apply_table_policy(job["segments"], settings.get("translate_tables", False))
     api_mode = settings.get("provider", "local") in {"deepseek", "api"} and not replay and not layout_test
     api_source = settings.get("provider", "local") in {"deepseek", "api"} and not layout_test
     if not replay and not layout_test and not WINDOWS and not api_mode:
@@ -191,6 +193,19 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     with fitz.open(folder / "original.pdf") as original:
         image_boxes = {n + 1: [fitz.Rect(image["bbox"]) for image in page.get_image_info()]
                        for n, page in enumerate(original)}
+        native_table_regions = []
+        page_metadata = {p["number"]: p for p in job.get("pages", [])}
+        for n, page in enumerate(original, 1):
+            saved = page_metadata.get(n, {})
+            boxes = saved.get("table_regions")
+            if boxes is None:
+                try:
+                    boxes = [list(t.bbox) for t in page.find_tables().tables
+                             if t.row_count >= 2 and t.col_count >= 2]
+                except Exception:
+                    boxes = []
+            native_table_regions.extend({"page": n, "bbox": box} for box in boxes)
+    table_regions = list(native_table_regions)
     model_dir = ROOT / "models" / ("qwen3-14b" if settings.get("profile") == "precision" else "qwen3-4b")
     if WINDOWS:
         from .windows_models import model_directory
@@ -208,12 +223,12 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     if not replay and not layout_test and not local.installed():
         raise RuntimeError("选定的本地模型尚未准备完毕")
     glossary = terms_for(settings["domain"], settings["glossary"])
-    source_profile, page_sizes = read_source_profile(folder / "original.pdf", sections)
+    source_profile, page_sizes = [], {}
     previous = {s["id"]: s for s in job["segments"]}
     previous_text = {(s["page"], s["source"]): s for s in job["segments"]}
     cache_path = folder / "paragraph-cache.json"
     cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
-    quality_settings = {k: v for k, v in settings.items() if k not in {"pages", "auto_cleanup", "allow_slow_cpu", "force_cpu"}}
+    quality_settings = {k: v for k, v in settings.items() if k not in {"pages", "auto_cleanup", "allow_slow_cpu", "force_cpu", "translate_tables"}}
     installation = json.loads((model_dir / "installation.json").read_text()) if not api_source and local.installed() else {}
     digest = hashlib.sha256(json.dumps({"settings": quality_settings, "glossary": glossary,
                                        "model_revision": installation.get("revision"),
@@ -419,12 +434,20 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             return text, translate_input
 
         def translate(self, docs):
-            nonlocal document_plan, glossary, digest
+            nonlocal document_plan, glossary, digest, source_profile, page_sizes, table_regions
             # BabelDOC has finished layout inference for all selected pages.
             # No layout session is needed while the large language model runs.
             import gc
             layout_model.model = None
             gc.collect()
+            table_regions = native_table_regions + [
+                {"page": p.page_number + 1,
+                 "bbox": [layout.box.x, p.cropbox.box.y2-layout.box.y2,
+                          layout.box.x2, p.cropbox.box.y2-layout.box.y]}
+                for p in docs.page for layout in p.page_layout if layout.class_name == "table"]
+            source_profile, page_sizes = read_source_profile(
+                folder / "original.pdf", sections,
+                excluded_table_regions=() if settings.get("translate_tables", False) else table_regions)
             for p in docs.page:
                 edited_sources = {old["source"] for old in previous.values()
                                   if old["page"] == p.page_number + 1 and old["status"] == "edited"}
@@ -452,10 +475,6 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                             prepared[seg["id"]] = {"source": seg["source"], "formula_hints": seg["formula_hints"]}
             save()
             try:
-                table_regions = [{"page": p.page_number + 1,
-                                  "bbox": [layout.box.x, p.cropbox.box.y2-layout.box.y2,
-                                           layout.box.x2, p.cropbox.box.y2-layout.box.y]}
-                                 for p in docs.page for layout in p.page_layout if layout.class_name == "table"]
                 document_plan = DocumentContext(list(records.values()), sections, page_sizes, source_profile, table_regions)
                 glossary = contextual_glossary("", glossary, settings["domain"], reference={
                     "论文标题": document_plan.title, "摘要背景": document_plan.abstract})
@@ -463,6 +482,7 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                                       "domain": settings["domain"], "base": glossary,
                                       "provider": settings.get("provider", "local"), "api_model": settings.get("api_model") if api_source else None,
                                       "api_config": settings.get("api_config") if api_source else None,
+                                      "translate_tables": settings.get("translate_tables", False),
                                       "model_revision": installation.get("revision"), "version": CONTEXT_VERSION, "code": code_digest})
                 old_terms = job.get("document_terminology", {})
                 proposals = [e for e in old_terms.get("suggestions", old_terms.get("entries", [])) if e.get("origin") == "model"] if old_terms.get("signature") == term_key else []
@@ -667,12 +687,16 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
         if reason in {"作者姓名保留原文", "作者机构与通讯地址保留原文", "作者引文与学术名称保留原文", "公式函数或单位保留原文", "科学对象编号保留原文", "科学缩写或名称保留原文", "探测器或科学模型名称保留原文"} and previous.get(sid, {}).get("status") == "edited":
             reason = ""  # Honor a saved user translation of literal metadata.
         source_xref = next((x.xref_id for x in page.pdf_xobject if x.xobj_id == para.xobj_id), None)
-        return {"id": sid, "page": number, "source": source, "translation": "", "bbox": box,
+        in_table = is_table_content(number, box, table_regions, layout_label=para.layout_label)
+        segment = {"id": sid, "page": number, "source": source, "translation": "", "bbox": box,
                 "source_xref": source_xref,
                 "font_size": para.pdf_style.font_size if para.pdf_style else 10,
-                "kind": "paragraph", "layout_label": para.layout_label,
+                "kind": "table" if in_table else "paragraph", "layout_label": para.layout_label,
+                "table_content": in_table,
                 "footnote": footnote,
                 "status": "preserved" if reason else "pending", "reason": reason, "notes": [], "exported": False}
+        apply_table_policy([segment], settings.get("translate_tables", False), previous)
+        return segment
 
     title = " ".join(s["source"] for s in job["segments"] if s["page"] == 1)[:700]
     protected_numeric_scripts = []
@@ -780,9 +804,11 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                                     "page_count": len(translated), "original_page_count": job["page_count"],
                                     "page_count_preserved": geometry_ok,
                                     "natural_language_paragraphs": len(candidate), "exported_paragraphs": len(done),
+                                    "translate_tables": settings.get("translate_tables", False),
+                                    "preserved_table_paragraphs": sum(s.get("table_content", False) and s["status"] == "preserved" for s in records.values()),
                                     "paragraph_coverage_percent": round(100 * len(done) / max(1, len(candidate)), 1),
                                     "source_word_coverage_percent": round(100 * covered / max(1, words), 1),
-                                    "coverage_definition": "选定页面中至少含三个英文词的自然语言段落（含文字脚注）；不含参考文献、图内文字、纯公式、学术名称、作者机构地址和页眉页脚；以PDF实际文字提取确认",
+                                    "coverage_definition": "选定页面中至少含三个英文词的自然语言段落（含文字脚注）；不含参考文献、图内文字、纯公式、学术名称、作者机构地址和页眉页脚" + ("；表格文字参与翻译" if settings.get("translate_tables", False) else "；表格文字保留原文并从覆盖率中排除") + "；以PDF实际文字提取确认",
                                     "elapsed_seconds": round(time.time() - started, 1), "pdf_compression": compression, "semantic_review": "pending",
                                     "inference_performance": job.get("api_usage", {}) if api_source and replay else local.inference.stats,
                                     "document_terminology_count": len(job.get("document_terminology", {}).get("entries", [])),

@@ -11,8 +11,9 @@ from statistics import median
 
 from .glossary import matched_terms, parse_custom
 from .sections import block_text, prose_text_blocks
+from .table_policy import is_table_content
 
-VERSION = "document-context-3"
+VERSION = "document-context-4"
 BODY_LABELS = {"plain text", "text", "paragraph", "fallback_line", "body"}
 STOP = set("a an the and or of in on for from with without to by as at is are was were be been being this that these those we our their its it they which where when while if than then also can may might could would should will have has had not no only very more most less such same both each all any into over under between using used use based shown show given following however therefore respectively et al see figure table equation section appendix results result method methods paper work study studies model models parameter parameters case cases value values example examples number numbers different further first second third one two three four five six seven eight nine ten".split())
 STOP |= set("constrain constrains constrained calculate calculates calculated compute computes computed measure measures measured observe observes observed produce produces produced require requires required include includes included involve involves involved cause causes caused depend depends depended determine determines determined obtain obtains obtained allow allows allowed consider considers considered assume assumes assumed adopt adopts adopted find finds found infer infers inferred demonstrate demonstrates demonstrated indicate indicates indicated suggest suggests suggested predict predicts predicted yield yields yielded increase increases increased decrease decreases decreased".split())
@@ -58,6 +59,8 @@ def consistent_term_proposals(proposals, base):
 
 
 def is_heading(segment):
+    if segment.get("table_content") or segment.get("kind") == "table" or segment.get("layout_label") == "table":
+        return False
     text = segment.get("source", "").strip()
     if not text or len(text) > 170 or re.search(r"[.!?;]$", text):
         return False
@@ -77,7 +80,7 @@ def reading_key(segment, sections):
     return segment["page"], column, segment["bbox"][1], segment["bbox"][0]
 
 
-def read_source_profile(path, sections):
+def read_source_profile(path, sections, excluded_table_regions=()):
     import pymupdf as fitz
     from .layout_policy import frontmatter_reason
     result, sizes = [], {}
@@ -91,6 +94,14 @@ def read_source_profile(path, sections):
                            [[0, page.rect.width]])
             blocks = prose_text_blocks(n, blocks, columns, sections.get('reference_regions', []))
             for i, block in enumerate(blocks):
+                if excluded_table_regions:
+                    lines = [line for line in block["lines"] if not is_table_content(n, line["bbox"], excluded_table_regions)]
+                    if not lines:
+                        continue
+                    box = fitz.Rect(lines[0]["bbox"])
+                    for line in lines[1:]:
+                        box |= fitz.Rect(line["bbox"])
+                    block = {**block, "lines": lines, "bbox": list(box)}
                 text = block_text(block).strip()
                 box = list(block["bbox"])
                 if box[1] < 25 or not text:
@@ -299,6 +310,8 @@ class DocumentContext:
 
     @staticmethod
     def is_body(s):
+        if s.get("table_content") or s.get("kind") == "table" or s.get("layout_label") == "table":
+            return False
         return s.get("status") != "preserved" and not s.get("footnote") and s.get("layout_label") in BODY_LABELS and not is_heading(s) and len(re.findall(r"[A-Za-z]{2,}", s["source"])) >= 4
 
     def section_for(self, s):

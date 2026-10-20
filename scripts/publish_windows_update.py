@@ -97,6 +97,15 @@ def promote():
     api_report=ROOT/'validation/WINDOWS-API-HARDWARE-REPORT.json'
     api=json.loads(api_report.read_text(encoding='utf-8-sig'))
     assert api['passed'] and api['native_dpapi_roundtrip'] and api['reopened_profile_passed'] and not api['user_credential_used']
+    if CONFIG.get('require_table_translation_validation'):
+        table_report=ROOT/'validation/TABLE-TRANSLATION-REPORT.json'
+        tables=json.loads(table_report.read_text(encoding='utf-8-sig'))
+        assert tables['passed'] and tables['version']==VERSION and tables['native_version']==VERSION
+        assert tables['actual_installed_runtime'] and tables['real_4b_inference']
+        assert not tables['development_source_override'] and not tables['user_credential_used']
+        assert {case['case'] for case in tables['cases']}=={'off','on'}
+        assert all(case['passed'] and case['status']=='complete' for case in tables['cases'])
+        common.upload(r['id'],table_report)
     for p in (evidence,ROOT/'validation/WINDOWS-OFFLINE-SMOKE-REPORT.json',api_report):common.upload(r['id'],p)
     endpoint=f'/repos/{common.REPO}/contents/release-assets/windows-update.json'
     try:old=common.api(endpoint+'?ref=main')

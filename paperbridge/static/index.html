@@ -56,6 +56,7 @@
           <p id="apiSelectionInfo" class="api-selection-info" hidden></p>
           <button class="secondary" id="configureAPI">管理 API 配置</button>
           <label class="check-label"><input type="checkbox" id="polish" checked><span>译后复核与润色</span></label>
+          <div class="cleanup-setting"><label class="check-label"><input type="checkbox" id="translateTables" aria-describedby="tableTranslationHint"><span>翻译表格文字</span></label><small id="tableTranslationHint">默认保留表格内的原文、数值和排版；开启后翻译可识别的表内文字。表题和表注继续翻译。</small></div>
           <button class="secondary" id="editGlossary"><span data-icon="book"></span>专业词库</button>
           <div class="cleanup-setting"><label class="check-label"><input type="checkbox" id="autoCleanup" checked aria-describedby="cleanupHint"><span>完成后自动清理</span></label><small id="cleanupHint">选择自动保存，任务结束后生效。清除临时文件与旧自动备份；保留原稿、最新中文/双语 PDF 和校订记录。模型内存始终在任务结束后释放。</small></div>
         </div></details>

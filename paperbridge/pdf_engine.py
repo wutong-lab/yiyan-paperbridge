@@ -179,6 +179,7 @@ def analyze(path: Path) -> dict:
             segments.extend(page_segments)
             pages.append({"number": page_number + 1, "width": page.rect.width, "height": page.rect.height,
                           "images": len(images), "tables": len(tables), "scanned": scanned,
+                          "table_regions": [table["bbox"] for table in tables],
                           "blocks": len(page_segments), "candidates": sum(s["status"] == "pending" for s in page_segments)})
         return {"pages": pages, "segments": segments, "warnings": warnings,
                 "page_count": len(document), "source_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),

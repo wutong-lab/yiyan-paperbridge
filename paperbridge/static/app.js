@@ -179,14 +179,14 @@ function settingsSummary() {
   $('apiSelectionInfo').textContent = saved ? `${saved.model} · ${new URL(saved.base_url).host}` : '请添加或选择可用的 API 配置';
   $('engine').querySelector('[value="conservative"]').disabled = remote;
   if(remote) $('engine').value = 'full';
-  $('settingsSummary').textContent = `${model} · ${$('polish').checked ? '译后复核' : '不进行润色'}`;
+  $('settingsSummary').textContent = `${model} · ${$('polish').checked ? '译后复核' : '不进行润色'} · ${$('translateTables').checked ? '翻译表格' : '表格保留原文'}`;
   $('settingsHint').textContent = remote ? `API 翻译：段落与必要语境发送至 ${saved ? new URL(saved.base_url).host : '所选服务'}，使用你的账户用量` : $('pages').value.trim() ? `翻译第 ${$('pages').value.trim()} 页，其余页保留原文` : '翻译全部页面，原稿单独保存';
   $('presetSummary').textContent = `${$('domain').selectedOptions[0].textContent} · ${$('pages').value.trim() ? `第 ${$('pages').value.trim()} 页` : '全部页'} · ${model}`;
   if(remote) $('serviceLabel').textContent = saved ? saved.name : '配置 API';
   else $('serviceLabel').textContent = currentStatus.model_installed || currentStatus.precision_installed ? '本地模型已就绪' : '准备本地模型';
   $('privacyLabel').textContent = remote ? `${saved?.name || 'API'} · 段落联网翻译` : '本地离线 · 文件保存在本机';
 }
-['domain','profile','polish','engine','pages','forceCPU'].forEach(id => $(id).addEventListener('change',settingsSummary));
+['domain','profile','polish','engine','pages','forceCPU','translateTables'].forEach(id => $(id).addEventListener('change',settingsSummary));
 $('provider').addEventListener('change',() => {
   if($('provider').value === 'configure') { refreshServiceOptions(preferredService); showAPISettings(); return; }
   rememberService(); settingsSummary();
@@ -458,6 +458,7 @@ const batch = new PaperBatch.BatchQueue(localStorage);
 let importing = false, submittingBatch = false;
 function translationSettings() {
   return {domain:$('domain').value,glossary:terms,polish:$('polish').checked,
+    translate_tables:$('translateTables').checked,
     pages:$('pages').value,engine:$('engine').value,profile:$('profile').value,auto_cleanup:$('autoCleanup').checked,
     provider:$('provider').value.startsWith('api:') ? 'api' : 'local',api_profile_id:selectedAPIProfile()?.id || '',force_cpu:$('forceCPU').checked,allow_slow_cpu:false};
 }
@@ -552,6 +553,7 @@ async function openJob(document, newDocument = false) {
   $('translationOptions').open = !job.has_output;
   $('welcome').hidden = true; $('workspace').hidden = false; $('domain').value = job.settings.domain || 'general'; $('engine').value = job.settings.engine || (job.translated ? 'conservative' : 'full'); $('profile').value = PaperUI.initialProfile(job, currentStatus); $('pages').value = job.settings.pages || ''; $('polish').checked = job.settings.polish !== false; terms = PaperReader.documentTerms(job.settings, localStorage.getItem('paperbridge.terms') || '', newDocument); $('customTerms').value = terms; history.replaceState(null, '', `/?job=${job.id}`);
   $('autoCleanup').checked = job.settings.auto_cleanup !== false;
+  $('translateTables').checked = job.settings.translate_tables === true;
   $('forceCPU').checked = !!job.settings.force_cpu;
   if(job.settings.provider === 'api') refreshServiceOptions(`api:${job.settings.api_profile_id}`);
   else if(job.settings.provider === 'local') $('provider').value = 'local';
@@ -614,6 +616,7 @@ function drawJob() {
   $('domain').disabled = $('pages').disabled = $('polish').disabled = $('engine').disabled = $('profile').disabled = $('autoCleanup').disabled = processing;
   $('provider').disabled = processing;
   $('forceCPU').disabled = processing;
+  $('translateTables').disabled = processing;
   $('autoCleanup').disabled = processing || cleanupSaving;
   $('downloadBtn').disabled = !job.has_output || processing;
   $('repairTranslate').disabled = !currentStatus.repair_available || processing || !job.translated || job.settings.engine !== 'full';

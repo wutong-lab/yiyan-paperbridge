@@ -1,6 +1,6 @@
 # 译研 Mac 安装与更新教程
 
-**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.14.2-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
+**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.0-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
 
 打开安装器，选择 4B 或 14B，点击“下载并安装”。应用、所选模型、字体和排版环境会自动装好，之后可直接离线使用。
 
@@ -79,3 +79,7 @@
 ## 选择 API 翻译
 
 打开工作室中的 **API 配置**，添加服务并保存测试。翻译时选择保存好的配置即可。密钥由系统加密保存，重启软件后仍可使用。API 模式需要联网，无需加载本地模型。详细步骤见 [API 配置](API_SETUP.md)。
+
+## 表格文字翻译
+
+在论文的 **翻译设置 → 更多设置** 中找到 **翻译表格文字**。默认关闭，表内原文与数值保持原貌；需要中文表头或文字单元格时勾选后翻译。表题和表注继续翻译。批量任务沿用当前选择，已保存的任务会记住本篇设置。

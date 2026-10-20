@@ -1,5 +1,6 @@
 {
-  "version": "1.14.2",
+  "version": "1.15.0",
   "minimum_macos": "26.2",
-  "model_tag": "v1.8.0-macos-models"
+  "model_tag": "v1.8.0-macos-models",
+  "require_table_translation_validation": true
 }

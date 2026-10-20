@@ -134,6 +134,10 @@ def promote_app():
     common.require_runner()
     target=find_release(TAG)
     assert target and not target['draft']
+    validation_path=ROOT/'release-assets'/f'verification-{VERSION}-macos.json'
+    if CONFIG.get('require_table_translation_validation') and not validation_path.is_file():
+        print('Mac candidate is ready. Stable update waits for physical Mac translation validation.',flush=True)
+        return
     records={a['name']:a for a in target['assets']}
     for filename in ('macos-app.json','MACOS-BUILD-REPORT.json','MACOS-FIRST-LAUNCH.json'):
         asset=records[filename]
@@ -143,6 +147,15 @@ def promote_app():
     build=json.loads((ROOT/'.cache/MACOS-BUILD-REPORT.json').read_text())
     launch=json.loads((ROOT/'.cache/MACOS-FIRST-LAUNCH.json').read_text())
     assert manifest['schema']==1 and manifest['version']==VERSION
+    if CONFIG.get('require_table_translation_validation'):
+        validation=json.loads(validation_path.read_text())
+        assert validation['version']==VERSION and validation['source_commit']==build['source_commit']
+        assert validation['passed'] and validation['actual_installed_runtime'] and validation['real_4b_inference']
+        assert validation['native_installer_passed'] and not validation['development_source_override']
+        assert validation['native_version']==VERSION and not validation['user_credential_used']
+        assert {case['case'] for case in validation['cases']}=={'off','on'}
+        assert all(case['passed'] and case['status']=='complete' for case in validation['cases'])
+        common.upload(target['id'],validation_path)
     assert build['first_launch_passed'] and build['models_outside_application'] and not build['application_has_models']
     assert launch['loaded'] and launch['status']['layout_installed']
     evidence=records['MACOS-ARCHIVE-VALIDATION.json']
