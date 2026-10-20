@@ -1,0 +1,56 @@
+{
+  "version": "1.14.2",
+  "source_commit": "291a60c561fb3921c6e430e3bf008d0224953de0",
+  "validation_date": "2026-10-20",
+  "python_tests_passed": 363,
+  "javascript_tests_passed": 18,
+  "bibliography_regression_cases": 19,
+  "source_pdf_structure_audit": {
+    "documents": 6,
+    "pages": 170
+  },
+  "source_archives_privacy_scan_passed": true,
+  "user_credentials_used": false,
+  "user_documents_uploaded": false,
+  "macos": {
+    "native_first_launch": true,
+    "native_api_settings_view": true,
+    "actual_installer_completed": true,
+    "application_archive_sha256_verified": true,
+    "verified_mirror_archive_cache_used": true,
+    "system_proxy_changed": false,
+    "model_reused": true,
+    "model_hashes_and_timestamps_preserved": true,
+    "settings_and_papers_preserved": true,
+    "offline_4b_inference_passed": true,
+    "offline_one_page_test_seconds": 15.8,
+    "reference_text_and_pixels_preserved": true,
+    "structure_passed": true,
+    "workflow_run": "https://github.com/wutong-lab/yiyan-paperbridge/actions/runs/39369077245"
+  },
+  "windows": {
+    "actual_oneclick_install": true,
+    "native_in_app_update": true,
+    "native_first_launch": true,
+    "model_hashes_and_timestamps_preserved": true,
+    "settings_and_papers_preserved": true,
+    "offline_4b_inference_passed": true,
+    "offline_one_page_test_seconds": 80.3,
+    "reference_text_and_pixels_preserved": true,
+    "structure_passed": true,
+    "native_dpapi_roundtrip": true,
+    "profile_reopen_passed": true,
+    "localhost_api_protocol_passed": true,
+    "insufficient_14b_memory_blocked": true,
+    "workflow_run": "https://github.com/wutong-lab/yiyan-paperbridge/actions/runs/39369077182"
+  },
+  "api_bibliography_filter": {
+    "full_pipeline_test_passed": true,
+    "bibliography_excluded_from_requests_and_context": true,
+    "body_translated_and_exported": true,
+    "reference_text_and_pixels_preserved": true,
+    "synthetic_provider": true,
+    "real_cloud_provider_contacted": false
+  },
+  "full_14b_inference_tested_in_this_validation": false
+}
