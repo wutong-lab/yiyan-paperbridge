@@ -28,6 +28,9 @@ def model_directory(profile):
         bundled = Path(bundle) / "Models" / name
         if installed(bundled):
             return bundled
+    shared = os.environ.get("PAPERBRIDGE_INSTALLED_MODELS_ROOT")
+    if shared and installed(Path(shared) / name):
+        return Path(shared) / name
     return ROOT / "models" / name
 
 
@@ -68,9 +71,9 @@ _hardware_cache = None
 _hardware_time = 0
 
 
-def hardware():
+def hardware(refresh=False):
     global _hardware_cache, _hardware_time
-    if _hardware_cache is not None and time.monotonic() - _hardware_time < 30:
+    if not refresh and _hardware_cache is not None and time.monotonic() - _hardware_time < 30:
         return _hardware_cache
     import psutil
     memory = psutil.virtual_memory()

@@ -112,7 +112,17 @@ def literal_reason(source, layout_label):
     if layout_label == "fallback_line":
         # These are plot/table identifiers, not English sentences. Do not map
         # e.g. EPL to an unrelated journal or force a detector name into Chinese.
-        without_formulas = re.sub(r"\{v\d+\}", "", text)
+        without_formulas = re.sub(r"\{v\d+\}", "", text).strip()
+        # Table rows often consist of CamelCase model names, dataset IDs and
+        # unchanged reference markers. Each token must independently look like
+        # an identifier; mixed natural-language headings still get translated.
+        tokens = without_formulas.split()
+        identifier = r"[A-Z][A-Za-z0-9]*(?:[_./@+–-][A-Za-z0-9]+)*"
+        signature = r"[A-Z]{2}|[a-z][A-Z]|\d|[_/@+–-]"
+        if tokens and all(re.fullmatch(identifier, token) and re.search(signature, token) for token in tokens):
+            return "图表中的模型名或数据集编号保留原文"
+        if re.fullmatch(r"[a-z]{1,3}", without_formulas):
+            return "图表中的短拉丁字母标签保留原文"
         if re.search(r"\d", without_formulas) and re.fullmatch(r"[A-Z][A-Z0-9.+/−–-]*(?:\s+[A-Z0-9][A-Z0-9.+/−–-]*)*", without_formulas):
             return "科学对象编号保留原文"
         if re.fullmatch(r"[A-Z][A-Z0-9]*(?:[/+: ,–-]+[A-Z][A-Z0-9]*)*", without_formulas):
@@ -151,11 +161,14 @@ def is_natural_footnote(source, box, label, page_height=792, *, font_size=None, 
     return note_layout and box[1] > .69 * page_height and words >= 8 and (numbered or continuation)
 
 
-def frontmatter_reason(source, page, box, page_height):
+def frontmatter_reason(source, page, box, page_height, *, layout_label=None):
     """Preserve author lists without forcing a model to invent Chinese names."""
-    if page != 1:
+    if page != 1 or layout_label == "title":
         return ""
     text = re.sub(r"\{v\d+\}|</?b\d+>|[\d¹²³⁴⁵⁶⁷⁸⁹⁰]+", "", source)
+    # Author names may touch 'and' at a PDF font boundary. Normalize only
+    # this classifier's view; never alter the preserved PDF/name spelling.
+    text = re.sub(r"\band(?=[A-Z])", "and ", text)
     if re.search(r"\b(?:is|are|was|were|has|have|we|using|present|show|find|examine|suggest|predict|observed|provide|investigate|demonstrate|derive|measure)\b", text, re.I):
         return ""
     institutions = re.findall(r"\b(?:University|Institute|Center|Centre|Department|Laboratory|School|Observatory|Academy|College)\b", text, re.I)
@@ -164,6 +177,8 @@ def frontmatter_reason(source, page, box, page_height):
     if box[1] > .5 * page_height or len(source) > 1000:
         return ""
     if institutions:
+        if re.search(r"[A-Za-z0-9._%+-]+@|https?://", source):
+            return "作者机构与通讯地址保留原文"
         return ""
     person = r"(?:(?:[A-Z]\.\s*){1,3}[A-Z][A-Za-z’'-]+|[A-Z][a-z]+(?:\s+[A-Z]\.)?\s+[A-Z][a-z]+)"
     names = re.findall(r"(?:^|[,·;]|\band\b)\s*" + person, text)

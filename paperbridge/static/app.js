@@ -25,6 +25,7 @@ function icon(name) { const el = document.createElement('span'); el.innerHTML = 
 document.querySelectorAll('[data-icon]').forEach(el => el.append(icon(el.dataset.icon).firstChild));
 let job = null, page = 1, activeTab = 'pdf', currentStatus = {}, timer = null, toastTimer;
 let viewRevision = 0, openingRequest = 0, segmentRequest = 0;
+let hardwareRequest = null, startingTranslation = false;
 let recentDocuments = [], pageSegments = [], targetedSegment = null;
 let terms = localStorage.getItem('paperbridge.terms') || '';
 let resourceCleaning = false;
@@ -86,11 +87,16 @@ document.addEventListener('keydown', event => {
 $('customTerms').value = terms;
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 6500); }
 async function api(path, options = {}) {
+  const {timeoutMs = 180000, ...requestOptions} = options;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
-  try { response = await fetch(path, options); }
-  catch { throw new Error('无法连接本机服务，请检查软件是否正在运行'); }
-  if (!response.ok) { let detail; try { detail = (await response.json()).detail; } catch { detail = '操作未完成，请重试'; } throw new Error(typeof detail === 'string' ? detail : '输入格式有误，请检查'); }
-  return response.json();
+  try {
+    try { response = await fetch(path, {...requestOptions,signal:controller.signal}); }
+    catch(error) { throw new Error(error.name === 'AbortError' ? '读取本机服务超时；后台任务会继续，请检查软件提示或文件访问权限' : '无法连接本机服务，请检查软件是否正在运行'); }
+    if (!response.ok) { let detail; try { detail = (await response.json()).detail; } catch { detail = '操作未完成，请重试'; } const error = new Error(typeof detail === 'string' ? detail : detail?.message || '输入格式有误，请检查'); if(detail?.kind === 'local_runtime') error.failure = detail; throw error; }
+    return await response.json();
+  } finally { clearTimeout(timeout); }
 }
 // Called by the native Mac app after a Finder / Cmd-O import. Use the same
 // persisted queue as file-input and drag-and-drop imports.
@@ -113,6 +119,8 @@ function showModal(id) {
 function closeModal(id) {
   const wasOpen = !$(id).hidden; $(id).hidden = true;
   if(id === 'documentTermsModal') { documentTermOwner = null; documentTermRequest++; }
+  if(id === 'apiModal') $('apiKey').value = '';
+  if(id === 'hardwareModal') hardwareRequest = null;
   if(wasOpen) modalFocus.get(id)?.focus(); modalFocus.delete(id);
 }
 document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => closeModal(button.dataset.close)));
@@ -141,12 +149,183 @@ setSidebar(false);
 $('toggleSidebar').addEventListener('click', () => setSidebar(!document.body.classList.contains('sidebar-open')));
 $('sidebarBackdrop').addEventListener('click', () => setSidebar(false));
 $('helpButton').addEventListener('click', () => showModal('helpModal'));
-function settingsSummary() {
-  $('settingsSummary').textContent = `${$('profile').value === 'precision' ? '14B 精译' : '4B 标准'} · ${$('polish').checked ? '译后复核' : '不进行润色'}`;
-  $('settingsHint').textContent = $('pages').value.trim() ? `翻译第 ${$('pages').value.trim()} 页，其余页保留原文` : '翻译全部页面，原稿单独保存';
-  $('presetSummary').textContent = `${$('domain').selectedOptions[0].textContent} · ${$('pages').value.trim() ? `第 ${$('pages').value.trim()} 页` : '全部页'} · ${$('profile').value === 'precision' ? '14B 精译' : '4B 标准'}`;
+let apiProfiles = [], apiPresets = [], editingAPIProfile = null, apiSettingsBusy = false;
+let preferredService = 'local';
+try { preferredService = localStorage.getItem('paperbridge.service') || 'local'; } catch {}
+function selectedAPIProfile() { return apiProfiles.find(p => `api:${p.id}` === $('provider').value); }
+function rememberService() { preferredService = $('provider').value; try { localStorage.setItem('paperbridge.service',preferredService); } catch {} }
+function refreshServiceOptions(preferred = $('provider').value || preferredService) {
+  const choices = [{id:'local',name:'本地离线 · 4B / 14B'}, ...apiProfiles.map(p => ({id:`api:${p.id}`,name:`${p.name} · ${p.model}`}))];
+  if(preferred.startsWith('api:') && !choices.some(p => p.id === preferred)) choices.push({id:preferred,name:'原任务的 API 配置已删除 · 请重新选择'});
+  choices.push({id:'configure',name:'＋ 添加 API 配置…'});
+  $('provider').replaceChildren(...choices.map(row => new Option(row.name,row.id)));
+  $('provider').value = choices.some(p => p.id === preferred) ? preferred : 'local';
 }
-['domain','profile','polish','engine','pages'].forEach(id => $(id).addEventListener('change',settingsSummary));
+function updateProfileState(state) {
+  const before = JSON.stringify(apiProfiles);
+  apiProfiles = state?.profiles || []; apiPresets = state?.presets || apiPresets;
+  if(before !== JSON.stringify(apiProfiles) || !$('provider').dataset.initialized) {
+    refreshServiceOptions($('provider').dataset.initialized ? $('provider').value : preferredService);
+    $('provider').dataset.initialized = 'true';
+    if(!$('apiModal').hidden) drawAPIProfiles();
+  }
+}
+function settingsSummary() {
+  const remote = $('provider').value.startsWith('api:');
+  const saved = busy() && job?.settings.provider === 'api' ? job.settings.api_config : selectedAPIProfile();
+  const model = remote ? saved?.name || '请选择 API 配置' : $('profile').value === 'precision' ? '14B 精译' : '4B 标准';
+  $('localModelSetting').hidden = remote; $('apiSelectionInfo').hidden = !remote;
+  $('cpuModeSetting').hidden = remote || currentStatus.platform !== 'windows';
+  $('apiSelectionInfo').textContent = saved ? `${saved.model} · ${new URL(saved.base_url).host}` : '请添加或选择可用的 API 配置';
+  $('engine').querySelector('[value="conservative"]').disabled = remote;
+  if(remote) $('engine').value = 'full';
+  $('settingsSummary').textContent = `${model} · ${$('polish').checked ? '译后复核' : '不进行润色'}`;
+  $('settingsHint').textContent = remote ? `API 翻译：段落与必要语境发送至 ${saved ? new URL(saved.base_url).host : '所选服务'}，使用你的账户用量` : $('pages').value.trim() ? `翻译第 ${$('pages').value.trim()} 页，其余页保留原文` : '翻译全部页面，原稿单独保存';
+  $('presetSummary').textContent = `${$('domain').selectedOptions[0].textContent} · ${$('pages').value.trim() ? `第 ${$('pages').value.trim()} 页` : '全部页'} · ${model}`;
+  if(remote) $('serviceLabel').textContent = saved ? saved.name : '配置 API';
+  else $('serviceLabel').textContent = currentStatus.model_installed || currentStatus.precision_installed ? '本地模型已就绪' : '准备本地模型';
+  $('privacyLabel').textContent = remote ? `${saved?.name || 'API'} · 段落联网翻译` : '本地离线 · 文件保存在本机';
+}
+['domain','profile','polish','engine','pages','forceCPU'].forEach(id => $(id).addEventListener('change',settingsSummary));
+$('provider').addEventListener('change',() => {
+  if($('provider').value === 'configure') { refreshServiceOptions(preferredService); showAPISettings(); return; }
+  rememberService(); settingsSummary();
+});
+function drawAPIProfiles() {
+  $('apiProfileList').replaceChildren();
+  for(const row of apiProfiles) {
+    const button = document.createElement('button'); button.className = 'api-profile-item';
+    button.classList.toggle('active',row.id === editingAPIProfile); button.setAttribute('aria-pressed',String(row.id === editingAPIProfile));
+    const title = document.createElement('b'), detail = document.createElement('small');
+    title.textContent = row.name; detail.textContent = row.model;
+    button.append(title,detail); button.addEventListener('click',() => { if(!apiSettingsBusy) editAPIProfile(row); });
+    $('apiProfileList').append(button);
+  }
+  if(!apiProfiles.length) { const p = document.createElement('p'); p.textContent = '还没有保存的配置'; $('apiProfileList').append(p); }
+}
+function presetHelp() {
+  const preset = apiPresets.find(p => p.id === $('apiPreset').value);
+  $('apiPresetHint').textContent = preset?.hint || '';
+  $('apiModelSuggestions').replaceChildren(...(preset?.models || []).map(id => new Option(id,id)));
+}
+function editAPIProfile(row = null) {
+  editingAPIProfile = row?.id || null;
+  $('apiPreset').replaceChildren(...apiPresets.map(p => new Option(p.name,p.id)));
+  const value = row || apiPresets[0] || {};
+  $('apiPreset').value = row?.kind || value.id || 'deepseek';
+  $('apiName').value = row?.name || '我的 DeepSeek';
+  $('apiBase').value = value.base_url || ''; $('apiModelId').value = value.model || '';
+  $('apiJsonMode').checked = !!value.json_mode; $('apiStreamUsage').checked = !!value.stream_usage;
+  $('apiKey').value = ''; $('apiKey').placeholder = row?.key_configured ? '已安全保存 · 留空沿用，填写新密钥可替换' : '粘贴你的 API Key';
+  $('deleteAPIProfile').hidden = !row;
+  $('apiStatus').textContent = row ? '此配置已保存。重启软件后可直接选择；密钥留空则继续使用原密钥。' : '填写配置并保存，下次可直接选择。';
+  presetHelp(); drawAPIProfiles();
+}
+async function showAPISettings() {
+  closeModal('modelModal'); setSidebar(false);
+  try { updateProfileState(await api('/api/providers/profiles',{timeoutMs:8000})); editAPIProfile(selectedAPIProfile() || apiProfiles[0]); showModal('apiModal'); }
+  catch(error) { toast(error.message); }
+}
+['configureAPI','openAPIFromModel','openAPISettings'].forEach(id => $(id).addEventListener('click',showAPISettings));
+$('newAPIProfile').addEventListener('click',() => { if(!apiSettingsBusy) { editAPIProfile(); $('apiName').focus(); } });
+$('apiPreset').addEventListener('change',() => {
+  const preset = apiPresets.find(p => p.id === $('apiPreset').value); if(!preset) return;
+  $('apiName').value = `我的 ${preset.name.split(' · ')[0]}`; $('apiBase').value = preset.base_url;
+  $('apiModelId').value = preset.model; $('apiJsonMode').checked = preset.json_mode; $('apiStreamUsage').checked = preset.stream_usage;
+  $('apiKey').value = ''; presetHelp();
+  $('apiStatus').textContent = editingAPIProfile ? '服务地址改变后，请填写对应的新密钥并保存。' : '填写密钥后保存即可使用。';
+});
+async function saveAPIProfile(action) {
+  if(apiSettingsBusy) return;
+  apiSettingsBusy = true;
+  $('apiModal').querySelectorAll('input,select,button').forEach(el => el.disabled = true);
+  try {
+    if(action === 'delete') {
+      if(!editingAPIProfile) return;
+      const removed = editingAPIProfile;
+      await api(`/api/providers/profiles/${removed}`,{method:'DELETE'});
+      updateProfileState(await api('/api/providers/profiles'));
+      if($('provider').value === `api:${removed}` && !busy()) { refreshServiceOptions('local'); rememberService(); }
+      editAPIProfile(apiProfiles[0]); $('apiStatus').textContent = '配置与保存的密钥已删除。已提交的任务继续使用提交时的设置。';
+    } else {
+      const body = {name:$('apiName').value,kind:$('apiPreset').value,base_url:$('apiBase').value,model:$('apiModelId').value,
+        api_key:$('apiKey').value.trim(),json_mode:$('apiJsonMode').checked,stream_usage:$('apiStreamUsage').checked};
+      const row = await api(`/api/providers/profiles${editingAPIProfile ? '/' + editingAPIProfile : ''}`,{method:editingAPIProfile ? 'PUT' : 'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      $('apiKey').value = ''; body.api_key = '';
+      updateProfileState(await api('/api/providers/profiles'));
+      if(!busy()) { refreshServiceOptions(`api:${row.id}`); rememberService(); }
+      editAPIProfile(row);
+      $('apiStatus').textContent = busy() ? `“${row.name}”已保存。本篇继续使用提交时的设置，处理结束后可切换。` : `“${row.name}”已保存并选用。重启软件后可直接翻译。`;
+      if(action === 'test') {
+        $('apiStatus').textContent = '配置已保存，正在查询服务的模型列表…';
+        const result = await api(`/api/providers/profiles/${row.id}/test`,{method:'POST'});
+        $('apiStatus').textContent = result.message;
+      }
+    }
+  } catch(error) { $('apiStatus').textContent = error.message; }
+  finally { $('apiKey').value = ''; apiSettingsBusy = false; $('apiModal').querySelectorAll('input,select,button').forEach(el => el.disabled = false); settingsSummary(); }
+}
+$('saveAPIProfile').addEventListener('click',() => saveAPIProfile('save'));
+$('testAPI').addEventListener('click',() => saveAPIProfile('test'));
+$('deleteAPIProfile').addEventListener('click',() => saveAPIProfile('delete'));
+$('useLocalProvider').addEventListener('click',() => { $('provider').value = 'local'; rememberService(); settingsSummary(); closeModal('apiModal'); });
+
+async function withLocalHardware(settings, proceed) {
+  if(settings.provider !== 'local') return proceed(settings);
+  const owner = job?.id;
+  const assessment = await api(`/api/local/preflight?profile=${encodeURIComponent(settings.profile)}&force_cpu=${!!settings.force_cpu}`,{timeoutMs:15000});
+  if(job?.id !== owner) return;
+  if(assessment.status === 'blocked' || assessment.status === 'confirm_cpu' && !settings.allow_slow_cpu) {
+    showHardwareSettings(assessment, settings, proceed); return;
+  }
+  return proceed(settings);
+}
+function showHardwareSettings(assessment, settings, proceed) {
+  const request = {settings:{...settings},proceed,owner:job?.id};
+  $('hardwareHeading').textContent = assessment.status === 'blocked' ? '当前配置无法启动这个模型' : '14B 将使用 CPU，翻译可能较慢';
+  $('hardwareMessage').textContent = assessment.message;
+  $('hardwareFacts').textContent = `内存 ${assessment.ram_gb ?? '—'} GB · 当前可用 ${assessment.available_ram_gb ?? '—'} GB · 当前模式预留 ${assessment.minimum_ram_gb ?? '—'} GB 内存`;
+  $('hardwareContinueCPU').hidden = assessment.status !== 'confirm_cpu';
+  $('hardwareUse4B').hidden = settings.profile === 'standard' || assessment.can_use_4b === false;
+  $('hardwareAPIChoice').replaceChildren(...apiProfiles.map(p => new Option(`${p.name} · ${p.model}`,p.id)));
+  $('hardwareAPIChoice').hidden = !apiProfiles.length;
+  $('hardwareUseAPI').textContent = apiProfiles.length ? '改用所选 API 并翻译' : '配置 API';
+  showModal('hardwareModal');
+  hardwareRequest = request;
+}
+async function continueHardware(changes) {
+  const request = hardwareRequest;
+  if(!request || request.owner !== job?.id || busy()) return;
+  const settings = {...request.settings,...changes};
+  closeModal('hardwareModal');
+  if(settings.provider === 'local') {
+    $('provider').value = 'local'; $('profile').value = settings.profile; $('forceCPU').checked = !!settings.force_cpu;
+    if(settings.profile === 'standard' && !currentStatus.model_installed) { showModal('modelModal'); toast('已选择 4B，请先准备本地模型'); return; }
+  } else refreshServiceOptions(`api:${settings.api_profile_id}`);
+  rememberService(); settingsSummary();
+  try { await withLocalHardware(settings,request.proceed); } catch(error) { toast(error.message); }
+}
+$('hardwareContinueCPU').addEventListener('click',() => continueHardware({allow_slow_cpu:true,force_cpu:true}));
+$('hardwareUse4B').addEventListener('click',() => continueHardware({provider:'local',profile:'standard',force_cpu:false,allow_slow_cpu:false,api_profile_id:''}));
+$('hardwareUseAPI').addEventListener('click',() => {
+  if(!apiProfiles.length) { closeModal('hardwareModal'); showAPISettings(); return; }
+  continueHardware({provider:'api',api_profile_id:$('hardwareAPIChoice').value,engine:'full',force_cpu:false,allow_slow_cpu:false});
+});
+function handleHardwareFailure(error, settings, proceed) {
+  if(error.failure?.assessment) showHardwareSettings(error.failure.assessment,settings,proceed);
+  else toast(error.message);
+}
+$('runtimeRecovery').addEventListener('click', async () => {
+  if(!job || busy()) return;
+  const id = job.id, revision = viewRevision;
+  const settings = {...translationSettings(),provider:'local',profile:job.settings.profile || 'precision',force_cpu:!!job.settings.force_cpu};
+  try {
+    let assessment = await api(`/api/local/preflight?profile=${settings.profile}&force_cpu=true`);
+    if(job?.id !== id || viewRevision !== revision) return;
+    if(currentStatus.platform !== 'windows' || assessment.status !== 'confirm_cpu') assessment = {...assessment,status:'blocked',message:job.failure?.message || job.message};
+    showHardwareSettings(assessment,settings,chosen => submitTranslation(id,revision,chosen));
+  } catch(error) { toast(error.message); }
+});
 let cleanupSaving = false;
 $('autoCleanup').addEventListener('change', async () => {
   if(!job || busy() || cleanupSaving) return;
@@ -164,7 +343,9 @@ $('autoCleanup').addEventListener('change', async () => {
 });
 async function modelStatus() {
   try {
-    currentStatus = await api('/api/status');
+    currentStatus = await api('/api/status',{timeoutMs:8000});
+    updateProfileState(currentStatus.api_profiles);
+    if(currentStatus.app_version && currentStatus.app_version !== 'development') document.querySelector('.version').textContent = `${currentStatus.platform === 'windows' ? 'Windows' : 'Mac'} · ${currentStatus.app_version}`;
     drawResources();
     const windows = currentStatus.platform === 'windows';
     $('windowsRequirements').hidden = !windows;
@@ -187,6 +368,7 @@ async function modelStatus() {
     $('installModel').textContent = currentStatus.installation.status === 'running' ? '模型下载中…' : (windows ? '下载 4B 标准模型（约 2.50GB）' : '下载本地模型（约 2.3 GB）');
     $('prepareFull').hidden = currentStatus.precision_installed && currentStatus.layout_installed;
     $('prepareFull').disabled = currentStatus.installation.status === 'running';
+    settingsSummary();
   } catch { $('modelTitle').textContent = '本地服务已断开'; $('modelMessage').textContent = navigator.userAgent.includes('PaperBridgeDesktop') ? '请退出并重新打开“译研”应用' : '请重新打开“译研”应用或 run.command'; $('serviceLabel').textContent = '本机服务未连接'; $('modelBadge').classList.add('offline'); currentStatus.can_cleanup = false; currentStatus.memory = null; drawResources(); }
 }
 function drawResources() {
@@ -241,7 +423,7 @@ $('cleanResources').addEventListener('click', async () => {
   } catch(error) { toast(error.message); }
   finally { resourceCleaning = false; await modelStatus(); await loadStorage(true); }
 });
-$('modelBadge').addEventListener('click', () => { modelStatus(); showModal('modelModal'); });
+$('modelBadge').addEventListener('click', () => { modelStatus(); if($('provider').value.startsWith('api:')) showAPISettings(); else showModal('modelModal'); });
 $('installModel').addEventListener('click', async () => { try { await api('/api/model/install', {method:'POST'}); await modelStatus(); toast('正在下载模型，论文不会被上传。完成后可离线翻译。'); } catch(error) { toast(error.message); } });
 $('prepareFull').addEventListener('click', async () => { try { await api('/api/resources/install', {method:'POST'}); await modelStatus(); toast('正在准备全文精译，下载只获取公开模型与字体。'); } catch(error) { toast(error.message); } });
 $('engine').addEventListener('change', () => { if ($('engine').value === 'conservative') $('profile').value = 'standard'; settingsSummary(); });
@@ -276,7 +458,8 @@ const batch = new PaperBatch.BatchQueue(localStorage);
 let importing = false, submittingBatch = false;
 function translationSettings() {
   return {domain:$('domain').value,glossary:terms,polish:$('polish').checked,
-    pages:$('pages').value,engine:$('engine').value,profile:$('profile').value,auto_cleanup:$('autoCleanup').checked};
+    pages:$('pages').value,engine:$('engine').value,profile:$('profile').value,auto_cleanup:$('autoCleanup').checked,
+    provider:$('provider').value.startsWith('api:') ? 'api' : 'local',api_profile_id:selectedAPIProfile()?.id || '',force_cpu:$('forceCPU').checked,allow_slow_cpu:false};
 }
 function renderBatch() {
   $('batchPanel').hidden = !batch.items.length;
@@ -327,16 +510,17 @@ async function uploadFiles(files) {
     $('chooseFile').replaceChildren(icon('plus'), document.createTextNode('选择论文 PDF')); $('replacePaper').replaceChildren(icon('upload'), document.createTextNode('添加论文')); renderBatch();
   }
 }
-$('startBatch').addEventListener('click', async () => {
+async function submitBatch(settings) {
   if(submittingBatch || importing) return;
   submittingBatch = true; renderBatch();
   try {
-    await batch.start(translationSettings(), (id, settings) => api(`/api/documents/${id}/translate`, {
+    await batch.start(settings, (id, settings) => api(`/api/documents/${id}/translate`, {
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}), renderBatch);
     if(job) { const id = job.id, revision = viewRevision; const updated = await api(`/api/documents/${id}`); if(job?.id === id && viewRevision === revision) { job = updated; drawJob(); } }
-    toast('批量任务已提交；本地模型依次处理，可点击列表查看每篇进度');
+    toast('批量任务已提交，依次翻译；可点击列表查看每篇进度');
   } finally { submittingBatch = false; renderBatch(); }
-});
+}
+$('startBatch').addEventListener('click',() => withLocalHardware(translationSettings(),submitBatch).catch(error => toast(error.message)));
 $('clearBatch').addEventListener('click', () => { batch.clear(); renderBatch(); toast('列表已收起，论文与翻译任务仍保留在最近的论文中'); });
 $('tryDemo').addEventListener('click', async () => { $('tryDemo').disabled = true; try { await openJob(await api('/api/demo', {method:'POST'})); await recent(); } catch(error) { toast(error.message); } finally { $('tryDemo').disabled = false; } });
 $('newPaper').addEventListener('click', () => { viewRevision++; openingRequest++; closeModal('documentTermsModal'); focusReader(false); setSidebar(false); job = null; drawRecent(); renderBatch(); $('welcome').hidden = false; $('workspace').hidden = true; history.replaceState(null, '', '/'); });
@@ -368,6 +552,13 @@ async function openJob(document, newDocument = false) {
   $('translationOptions').open = !job.has_output;
   $('welcome').hidden = true; $('workspace').hidden = false; $('domain').value = job.settings.domain || 'general'; $('engine').value = job.settings.engine || (job.translated ? 'conservative' : 'full'); $('profile').value = PaperUI.initialProfile(job, currentStatus); $('pages').value = job.settings.pages || ''; $('polish').checked = job.settings.polish !== false; terms = PaperReader.documentTerms(job.settings, localStorage.getItem('paperbridge.terms') || '', newDocument); $('customTerms').value = terms; history.replaceState(null, '', `/?job=${job.id}`);
   $('autoCleanup').checked = job.settings.auto_cleanup !== false;
+  $('forceCPU').checked = !!job.settings.force_cpu;
+  if(job.settings.provider === 'api') refreshServiceOptions(`api:${job.settings.api_profile_id}`);
+  else if(job.settings.provider === 'local') $('provider').value = 'local';
+  else if(job.settings.provider === 'deepseek') {
+    const matching = apiProfiles.find(p => p.kind === 'deepseek' && p.model === job.settings.api_model);
+    if(matching) refreshServiceOptions(`api:${matching.id}`);
+  }
   settingsSummary(); drawJob(); await updatePage(); if(viewRevision === revision) await updateIssues();
 }
 const statuses = {ready:'待翻译',queued:'等待处理',running:'正在翻译',exporting:'正在排版',complete:'译稿已生成',failed:'运行中断',interrupted:'可继续',cancelled:'已停止'};
@@ -378,16 +569,25 @@ function drawJob() {
   const figures = job.pages.reduce((n,p) => n + p.images,0), tables = job.table_count ?? job.pages.reduce((n,p) => n + p.tables,0);
   $('docInfo').textContent = `${job.page_count} 页 · ${job.candidates} 个可翻译区域 · ${figures} 个嵌入图像 · ${tables} 个检测到的表格`;
   $('jobStatus').textContent = statuses[job.status] || job.status; $('jobMessage').textContent = job.message;
+  const failure = job.status === 'failed' && job.failure?.kind === 'local_runtime';
+  const localActivity = busy() && job.settings.provider !== 'api' && job.settings.provider !== 'deepseek' && job.local_runtime;
+  $('runtimeNotice').hidden = !failure && !localActivity;
+  $('runtimeNotice').classList.toggle('runtime-error',!!failure);
+  $('runtimeNoticeText').textContent = failure ? job.failure.message : localActivity?.message || '';
+  $('runtimeRecovery').hidden = !failure;
   const progress = job.status === 'queued' ? 0 : job.progress;
   $('progressCard').dataset.state = job.status;
   $('jobPercent').textContent = `${progress}%`; $('progressBar').style.width = `${progress}%`;
   const coverage = job.export_report?.paragraph_coverage_percent;
   const wordCoverage = job.export_report?.source_word_coverage_percent;
   $('jobMetrics').replaceChildren();
-  const metrics = coverage !== undefined ? [['正文已排入',`${coverage}%`,busy() ? '上次导出 · 选定页' : '选定页 · 完整度'],['已生成译文',`${job.translated} 段`,`${job.exported} 段已导出`],PaperUI.issueMetric(job),['翻译范围',job.settings.pages || '全部页',`${job.page_count} 页原稿`]] : [['可翻译区域',`${job.candidates} 处`,'正文与图表文字'],['已生成译文',`${job.translated} 段`,'在本机处理'],['保留原文',`${job.preserved_count} 处`,'公式、引文等区域'],['翻译范围',job.settings.pages || '全部页',`${job.page_count} 页原稿`]];
+  const metrics = coverage !== undefined ? [['正文已排入',`${coverage}%`,busy() ? '上次导出 · 选定页' : '选定页 · 完整度'],['已生成译文',`${job.translated} 段`,`${job.exported} 段已导出`],PaperUI.issueMetric(job),['翻译范围',job.settings.pages || '全部页',`${job.page_count} 页原稿`]] : [['可翻译区域',`${job.candidates} 处`,'正文与图表文字'],['已生成译文',`${job.translated} 段`,($('provider').value.startsWith('api:') ? '所选 API 翻译' : '在本机处理')],['保留原文',`${job.preserved_count} 处`,'公式、引文等区域'],['翻译范围',job.settings.pages || '全部页',`${job.page_count} 页原稿`]];
   metrics.forEach(([name,value,note],index) => { const card = document.createElement('div'); card.className = `metric${coverage !== undefined && index === 2 ? ' note' : ''}`; const label = document.createElement('small'); label.textContent = name; const number = document.createElement('strong'); number.textContent = value; const caption = document.createElement('span'); caption.textContent = note; card.append(label,number,caption); $('jobMetrics').append(card); });
   const [durationLabel,durationValue,durationNote] = PaperUI.durationMetric(job);
   $('durationLabel').textContent = durationLabel; $('durationValue').textContent = durationValue; $('durationNote').textContent = durationNote;
+  const usage = ['deepseek','api'].includes(job.settings.provider) ? job.api_usage || job.export_report?.inference_performance : null;
+  $('apiUsage').hidden = !['deepseek','api'].includes(usage?.provider);
+  $('apiUsage').textContent = usage ? `API 用量：输入 ${(usage.prompt_tokens || 0).toLocaleString()} / 输出 ${(usage.completion_tokens || 0).toLocaleString()} tokens` : '';
   const compression = job.export_report?.pdf_compression;
   $('pdfSize').hidden = !compression || busy();
   if(compression) { $('pdfSize').textContent = `中文 PDF ${PaperUI.formatBytes(compression.after_bytes)}`; $('pdfSize').title = compression.status === 'optimized' ? `已无损缩小 ${PaperUI.formatBytes(compression.saved_bytes)}；逐页内容与外观检查通过` : '已保留原导出文件'; }
@@ -411,6 +611,8 @@ function drawJob() {
   if(processing) $('issuePanel').hidden = true;
   $('startTranslate').replaceChildren(icon('spark'), document.createTextNode(job.translated ? (job.status === 'complete' ? '重新翻译' : '继续翻译') : '开始翻译'));
   $('domain').disabled = $('pages').disabled = $('polish').disabled = $('engine').disabled = $('profile').disabled = $('autoCleanup').disabled = processing;
+  $('provider').disabled = processing;
+  $('forceCPU').disabled = processing;
   $('autoCleanup').disabled = processing || cleanupSaving;
   $('downloadBtn').disabled = !job.has_output || processing;
   $('repairTranslate').disabled = !currentStatus.repair_available || processing || !job.translated || job.settings.engine !== 'full';
@@ -532,21 +734,42 @@ function renderSegments() {
 }
 $('segmentFilter').addEventListener('change',renderSegments);
 $('segmentSearch').addEventListener('input',renderSegments);
-$('startTranslate').addEventListener('click', async () => {
-  if(!job) return; const id = job.id, revision = viewRevision, settings = translationSettings(); await modelStatus();
-  if(job?.id !== id || viewRevision !== revision) return;
-  if(settings.profile === 'precision' ? !currentStatus.precision_installed : !currentStatus.model_installed) { showModal('modelModal'); return; }
+async function submitTranslation(id, revision, settings) {
+  if(job?.id !== id || viewRevision !== revision || busy()) return;
   $('startTranslate').disabled = true;
   try { const updated = await api(`/api/documents/${id}/translate`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)}); if(job?.id === id && viewRevision === revision) { job = updated; drawJob(); if(activeTab === 'text') await updateSegments(); } }
-  catch(error) { toast(error.message); } finally { $('startTranslate').disabled = false; }
+  catch(error) { handleHardwareFailure(error,settings,chosen => submitTranslation(id,revision,chosen)); } finally { $('startTranslate').disabled = false; }
+}
+$('startTranslate').addEventListener('click', async () => {
+  if(!job || startingTranslation) return;
+  startingTranslation = true;
+  $('startTranslate').disabled = true;
+  $('startTranslate').textContent = '正在检查配置…';
+  try {
+  const id = job.id, revision = viewRevision, settings = translationSettings(); await modelStatus();
+  if(job?.id !== id || viewRevision !== revision) return;
+  if(settings.provider === 'api') {
+    if(!selectedAPIProfile()?.key_configured) { showAPISettings(); return; }
+  } else if(settings.profile === 'precision' ? !currentStatus.precision_installed : !currentStatus.model_installed) { showModal('modelModal'); return; }
+  await withLocalHardware(settings,chosen => submitTranslation(id,revision,chosen));
+  } catch(error) { toast(error.message); }
+  finally { startingTranslation = false; $('startTranslate').disabled = false; if(job) drawJob(); }
 });
 $('cancelTranslate').addEventListener('click', async () => { if(!job) return; try { const result = await api(`/api/documents/${job.id}/cancel`,{method:'POST'}); toast(result.message); } catch(error) { toast(error.message); } });
 $('repairTranslate').addEventListener('click', async () => {
   if(!job || busy()) return;
   const id = job.id, revision = viewRevision;
   $('repairTranslate').disabled = true;
-  try { const updated = await api(`/api/documents/${id}/repair`,{method:'POST'}); if(job?.id === id && viewRevision === revision) { job = updated; drawJob(); } toast('沿用本篇翻译设置，复查疑点；上一版 PDF 已保存'); }
-  catch(error) { toast(error.message); drawJob(); }
+  const repair = async settings => {
+    if(job?.id !== id || viewRevision !== revision || busy()) return;
+    // Changing model/provider is a translation, while CPU approval preserves
+    // the current translation and follows the normal repair path.
+    if(settings.provider !== (job.settings.provider || 'local') || settings.profile !== job.settings.profile) return submitTranslation(id,revision,settings);
+    const updated = await api(`/api/documents/${id}/repair?allow_slow_cpu=${!!settings.allow_slow_cpu}&force_cpu=${!!settings.force_cpu}`,{method:'POST'});
+    if(job?.id === id && viewRevision === revision) { job = updated; drawJob(); } toast('沿用本篇翻译设置，复查疑点；上一版 PDF 已保存');
+  };
+  try { await withLocalHardware({...translationSettings(),...job.settings},repair); }
+  catch(error) { handleHardwareFailure(error,job.settings,repair); drawJob(); }
 });
 $('downloadBtn').addEventListener('click', event => { event.stopPropagation(); $('downloadMenu').hidden = !$('downloadMenu').hidden; $('downloadBtn').setAttribute('aria-expanded',String(!$('downloadMenu').hidden)); if(!$('downloadMenu').hidden) $('downloadMenu').querySelector('button').focus(); });
 document.addEventListener('click', () => $('downloadMenu').hidden = true);

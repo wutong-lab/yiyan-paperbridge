@@ -12,7 +12,7 @@ from statistics import median
 from .glossary import matched_terms, parse_custom
 from .sections import block_text, is_reference_region
 
-VERSION = "document-context-1"
+VERSION = "document-context-2"
 BODY_LABELS = {"plain text", "text", "paragraph", "fallback_line", "body"}
 STOP = set("a an the and or of in on for from with without to by as at is are was were be been being this that these those we our their its it they which where when while if than then also can may might could would should will have has had not no only very more most less such same both each all any into over under between using used use based shown show given following however therefore respectively et al see figure table equation section appendix results result method methods paper work study studies model models parameter parameters case cases value values example examples number numbers different further first second third one two three four five six seven eight nine ten".split())
 STOP |= set("constrain constrains constrained calculate calculates calculated compute computes computed measure measures measured observe observes observed produce produces produced require requires required include includes included involve involves involved cause causes caused depend depends depended determine determines determined obtain obtains obtained allow allows allowed consider considers considered assume assumes assumed adopt adopts adopted find finds found infer infers inferred demonstrate demonstrates demonstrated indicate indicates indicated suggest suggests suggested predict predicts predicted yield yields yielded increase increases increased decrease decreases decreased".split())
@@ -35,10 +35,26 @@ def merge_terms(base, additions):
 
 def active_document_terms(job, base):
     saved = job.get("document_terminology", {})
-    proposals = {e["source"]: e["target"] for e in saved.get("suggestions", saved.get("entries", []))
+    accepted, _ = consistent_term_proposals(saved.get("suggestions", saved.get("entries", [])), base)
+    proposals = {e["source"]: e["target"] for e in accepted
                  if e.get("origin") == "model" and e.get("target")}
     # Existing curated/user vocabulary always wins over generated suggestions.
     return merge_terms(merge_terms(proposals, base), parse_custom(job.get("document_term_overrides", "")))
+
+
+def consistent_term_proposals(proposals, base):
+    """A generated longer phrase cannot override a curated subphrase."""
+    accepted, conflicts = [], []
+    for entry in proposals:
+        if entry.get("origin") != "model" or not entry.get("target"):
+            continue
+        required = matched_terms(entry["source"], base)
+        missing = {key: value for key, value in required.items() if value not in entry["target"]}
+        if missing:
+            conflicts.append({"source": entry["source"], "suggested": entry["target"], "required": missing})
+        else:
+            accepted.append(entry)
+    return accepted, conflicts
 
 
 def is_heading(segment):
@@ -191,7 +207,7 @@ def glossary_entries(segments, base, proposals, overrides=""):
 
 
 class DocumentContext:
-    def __init__(self, segments, sections, page_sizes, source_profile=()):
+    def __init__(self, segments, sections, page_sizes, source_profile=(), table_regions=()):
         self.ordered = sorted(segments, key=lambda s: reading_key(s, sections))
         self.sections, self.sizes = sections, page_sizes
         self.headings = sorted([s for s in [*source_profile, *segments] if is_heading(s)], key=lambda s: reading_key(s, sections))
@@ -210,6 +226,7 @@ class DocumentContext:
                 self.abstract += " " + s["source"]
         self.abstract = self.abstract.strip()[:550]
         self.contexts, self.links = {}, {}
+        self.table_count = 0
         body = [s for s in self.ordered if self.is_body(s)]
         for i, s in enumerate(body):
             previous = body[i-1]["source"][-600:] if i and self.section_for(body[i-1]) == self.section_for(s) else ""
@@ -222,6 +239,7 @@ class DocumentContext:
                 following = neighbors[0]["source"][:600] if neighbors else ""
             self.contexts[s["id"]] = {"论文标题": self.title, "摘要背景": self.abstract, "当前章节": self.section_for(s),
                 "上一段原文": previous, "下一段原文": following}
+        self.add_table_context(table_regions)
         claimed = set()
         for a, b in zip(body, body[1:]):
             if a["id"] in claimed or b["id"] in claimed or not self.continues(a, b):
@@ -232,6 +250,49 @@ class DocumentContext:
                 self.links[s["id"]] = group
                 self.contexts[s["id"]]["续接原文"] = [{"page": p["page"], "text": p["source"]} for p in (a, b)]
                 claimed.add(s["id"])
+
+    def add_table_context(self, regions):
+        """Use detected table rectangles and physical label rows, not page IDs.
+
+        Numeric cells are excluded from the prompt. Each label keeps its own
+        PDF box; nearby tables and plot labels cannot leak into this context.
+        """
+        for region in regions:
+            page, box = region["page"], region["bbox"]
+            cells = [s for s in self.ordered if s["page"] == page
+                     and box[0] <= (s["bbox"][0]+s["bbox"][2])/2 <= box[2]
+                     and box[1] <= (s["bbox"][1]+s["bbox"][3])/2 <= box[3]]
+            labels = [s for s in cells if s.get("status") != "preserved"
+                      and len(s["source"]) <= 100 and len(s["source"].split()) <= 8
+                      and re.search(r"[A-Za-z]{2,}", s["source"])]
+            if not labels:
+                continue
+            captions = [s for s in self.ordered if s["page"] == page
+                        and s.get("layout_label") == "table_caption"
+                        and max(box[0], s["bbox"][0]) < min(box[2], s["bbox"][2])]
+            distance = lambda s: max(0, box[1]-s["bbox"][3], s["bbox"][1]-box[3])
+            caption = min(captions, key=distance) if captions else None
+            caption_text = caption["source"][:600] if caption and distance(caption) <= 90 else ""
+            ordered = sorted(labels, key=lambda s: (s["bbox"][1], s["bbox"][0]))
+            table_labels = list(dict.fromkeys(s["source"] for s in ordered))[:28]
+            self.table_count += 1
+            for s in labels:
+                b = s["bbox"]; height = max(1, b[3]-b[1]); x = (b[0]+b[2])/2
+                above = [p for p in labels if p is not s and p["bbox"][3] <= b[1]+height*.2
+                         and 0 < b[1]-p["bbox"][1] < max(24, height*5)]
+                parent = ""
+                if above:
+                    row_y = max((p["bbox"][1]+p["bbox"][3])/2 for p in above)
+                    row = [p for p in above if abs((p["bbox"][1]+p["bbox"][3])/2-row_y) <= height*.6]
+                    if len(row) >= 2:
+                        parent = min(row, key=lambda p: abs((p["bbox"][0]+p["bbox"][2])/2-x))["source"]
+                neighbors = sorted([p for p in labels if p is not s
+                                    and abs((p["bbox"][1]+p["bbox"][3])/2-(b[1]+b[3])/2) <= height],
+                                   key=lambda p: abs((p["bbox"][0]+p["bbox"][2])/2-x))[:4]
+                ctx = self.contexts.setdefault(s["id"], {"论文标题": self.title, "摘要背景": self.abstract,
+                                                        "当前章节": self.section_for(s)})
+                ctx["表格语境"] = {"表题": caption_text, "上级表头": parent,
+                                   "相邻标签": [p["source"] for p in neighbors], "表内标签": table_labels}
 
     @staticmethod
     def is_body(s):
@@ -277,5 +338,6 @@ class DocumentContext:
     def summary(self):
         groups = {g["id"]: g for g in self.links.values()}
         return {"version": VERSION, "section_count": len({h["source"] for h in self.headings}),
+                "tables_with_context": self.table_count,
                 "continuation_groups": list(groups.values()), "joint_success": [], "joint_fallback": [],
                 "context_chars_max": max((len(json.dumps(c, ensure_ascii=False)) for c in self.contexts.values()), default=0)}

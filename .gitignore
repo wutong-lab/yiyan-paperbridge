@@ -22,3 +22,10 @@ examples/*.pdf
 desktop/**/bin/
 desktop/**/obj/
 release-assets/vendor-sources/
+
+settings/
+.api-secrets/
+**/api-profiles.json
+**/.api-secrets/
+*.key
+*.pem

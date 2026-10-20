@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .glossary import matched_terms, contextual_glossary, normalize_line_hyphens
 from .translation_audit import audit_translation, geometric_scale_relations, english_residues, negation_missing
-from .terminology import atomic_terms, counted_terms, geometric_reference_terms, calendar_terms, multiplicative_terms
+from .terminology import atomic_terms, enforced_terms, counted_terms, geometric_reference_terms, calendar_terms, multiplicative_terms
 
 from .paths import ROOT, WINDOWS
 MODEL_ID = "Qwen/Qwen3-4B-GGUF" if WINDOWS else "Qwen/Qwen3-4B-MLX-4bit"
@@ -231,12 +231,27 @@ class LocalTranslator:
         self.model = None
         self.tokenizer = None
         self.lock = threading.RLock()
+        self.runtime_options = {}
+        self.on_activity = None
         from .inference import PromptReuse
         if WINDOWS:
             from .gguf_inference import GGUFInference
             self.inference = GGUFInference(self.model_dir)
         else:
             self.inference = PromptReuse()
+
+    def configure_runtime(self, options=None, on_activity=None, cancelled=None):
+        self.runtime_options = options or {}
+        self.on_activity = on_activity
+        if WINDOWS:
+            self.inference.runtime_options = self.runtime_options
+            self.inference.on_activity = on_activity
+            self.inference.cancelled = cancelled or (lambda: False)
+
+    def _activity(self, stage, message):
+        if self.on_activity:
+            from .local_runtime import activity
+            self.on_activity(activity(stage, "metal", "precision" if self.model_dir.name == "qwen3-14b" else "standard", message))
 
     def installed(self) -> bool:
         if WINDOWS:
@@ -256,7 +271,13 @@ class LocalTranslator:
                 return
             except Exception as exc:
                 self.inference.close()
-                raise TranslationError(f"本地模型加载失败：{exc}") from exc
+                from .local_runtime import LocalRuntimeError, engine_failure
+                if isinstance(exc, LocalRuntimeError):
+                    raise
+                raise engine_failure("load", type(exc).__name__ + " " + str(exc)) from None
+        from .local_runtime import require_local, engine_failure
+        require_local("precision" if self.model_dir.name == "qwen3-14b" else "standard", self.runtime_options, windows=False, check_available=True)
+        self._activity("model_loading", "正在使用 Apple 集成 GPU 加载本地模型，最长等待 4 分钟")
         # Only a verified local directory is ever passed to the inference loader.
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -272,7 +293,9 @@ class LocalTranslator:
             with mx.stream(self.inference.stream):
                 self.model, self.tokenizer = load(str(self.model_dir))
         except Exception as exc:
-            raise TranslationError(f"本地模型加载失败：{type(exc).__name__}。此版本需要 Apple Silicon Mac。") from exc
+            raise engine_failure("load", type(exc).__name__ + " " + str(exc)) from None
+        finally:
+            self._activity("ready", "本地模型加载请求已结束")
 
     def unload(self):
         """Release model and KV tensors before PDF export or when idle."""
@@ -300,10 +323,20 @@ class LocalTranslator:
             try:
                 result = self.inference.generate(messages, max_tokens)
             except Exception as exc:
+                from .local_runtime import LocalRuntimeError
+                if isinstance(exc, LocalRuntimeError):
+                    raise
                 raise TranslationError(f"本地模型推理失败：{exc}") from exc
         else:
             prompt = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True, enable_thinking=False)
-            result = self.inference.generate(self.model, self.tokenizer, prompt, max_tokens)
+            self._activity("generating", "正在使用 Apple 集成 GPU 生成译文，单次超过 3 分钟会停止并提示")
+            try:
+                result = self.inference.generate(self.model, self.tokenizer, prompt, max_tokens)
+            except Exception as exc:
+                from .local_runtime import engine_failure
+                raise engine_failure("generate", type(exc).__name__ + " " + str(exc)) from None
+            finally:
+                self._activity("ready", "本次模型请求已结束")
         result = re.sub(r"<think>.*?</think>", "", result, flags=re.S).strip()
         result = re.sub(r"^```(?:json)?\s*|\s*```$", "", result).strip()
         try:
@@ -365,8 +398,8 @@ class LocalTranslator:
         for i, part in enumerate(parts):
             text = normalize_line_hyphens(part["source"], glossary)
             hints = part.get("formula_hints", {})
-            terms = contextual_glossary(text, glossary, domain, hints)
-            protected, tokens = protect(text, None, {**counted_terms(text, terms), **geometric_reference_terms(text, terms)}, alias_terms=terms)
+            terms = contextual_glossary(text, glossary, domain, hints, context)
+            protected, tokens = protect(text, enforced_terms(text, terms), {**counted_terms(text, terms), **geometric_reference_terms(text, terms)}, alias_terms=terms)
             replacements = {tag: f"<PB{i * 10000 + n}>" for n, tag in enumerate(tokens)}
             protected = re.sub(r"<PB\d+>", lambda m: replacements[m[0]], protected)
             tokens = {replacements[k]: v for k, v in tokens.items()}
@@ -450,7 +483,7 @@ class LocalTranslator:
                 # the same process. Noun retries only apply to generated drafts.
                 raise
             normalized = normalize_line_hyphens(text, glossary)
-            effective = contextual_glossary(normalized, glossary, domain, formula_hints)
+            effective = contextual_glossary(normalized, glossary, domain, formula_hints, context)
             if len(normalized) > 240 or not atomic_terms(normalized, effective):
                 # Long inputs already used visible nouns; a deterministic
                 # identical retry cannot improve the failed draft.
@@ -476,7 +509,7 @@ class LocalTranslator:
             if errors:
                 raise TranslationError(errors[0]["message"] + "，已保留原文待核对")
             return value, notes + ["列表符号或脚注编号由程序保留，请核对正文译意"]
-        glossary = contextual_glossary(text, glossary, domain, formula_hints)
+        glossary = contextual_glossary(text, glossary, domain, formula_hints, context)
         for english, chinese in glossary.items():
             if text.casefold().strip() == english.casefold():
                 return chinese, []
@@ -495,7 +528,8 @@ class LocalTranslator:
             # placeholders can obscure which quantity belongs to which object.
             bound_nouns = bind_terms and len(text) <= 240
             phrase_counts = {**counted_terms(text, glossary), **geometric_reference_terms(text, glossary)}
-            protected, tokens = protect(text, atomic_terms(text, glossary) if bound_nouns else None, phrase_counts, alias_terms=glossary)
+            fixed = atomic_terms(text, glossary) if bound_nouns else enforced_terms(text, glossary)
+            protected, tokens = protect(text, fixed, phrase_counts, alias_terms=glossary)
             # A complete fixed noun/count phrase has no prose left to infer.
             # Requiring generated Chinese before restoring its token would
             # incorrectly reject an otherwise valid placeholder-only answer.

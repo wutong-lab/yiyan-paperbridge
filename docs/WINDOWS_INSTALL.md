@@ -2,7 +2,7 @@
 
 译研把 SCI 英文论文翻译成专业中文，支持原文／译文左右对照、同步翻阅、专业词表与 PDF 导出。下载一个 **Windows 一键安装器**，选择 **4B 标准版**或 **14B 精译版**，向导自动下载、校验并安装完整环境。安装后导入论文即可离线翻译。
 
-**[下载 Windows 一键安装器](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.9.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [返回软件首页](../README.md)
+**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [返回软件首页](../README.md)
 
 ![Windows 论文工作室](images/windows-workspace.png)
 
@@ -10,7 +10,7 @@
 
 新版在顶部菜单提供 **软件 → 检查更新**。确认后打开更新向导，点击“检查并更新应用”；完成后继续离线翻译。普通更新只下载应用包，原来的 4B / 14B 模型、论文、译稿、术语和设置继续保留，也复用已有运行环境。
 
-从旧版首次升级，重新下载上面的一键安装器，选择原来的模型和安装位置。检测到完整模型后直接更新应用，无需重新下载模型。默认安装位置也可以使用 [单独更新工具](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.9.0-windows-update/Yiyan-Updater.exe)。
+从旧版首次升级，重新下载上面的一键安装器，选择原来的模型和安装位置。检测到完整模型后直接更新应用，无需重新下载模型。默认安装位置也可以使用 [单独更新工具](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-windows-update/Yiyan-Updater.exe)。
 
 后续版本与接口维护见 [Windows 更新发布说明](WINDOWS_RELEASE_MAINTENANCE.md)。
 
@@ -58,7 +58,7 @@ NVIDIA 加速组件使用 CUDA 12.4，建议安装 **551.61 或更新版本的 N
 
 ### 为完全离线的电脑准备安装文件
 
-也可以选择 [4B 完整离线包](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/tag/v1.6.0-windows-4b-offline)或 [14B 完整离线包](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/tag/v1.6.0-windows-14b-offline)。在对应页面下载 `Setup.exe` 及全部 `.bin`，放在同一个文件夹后运行安装程序；4B 共 3 个数据分卷，14B 共 6 个数据分卷。全部文件备好后可以拷贝到离线电脑上安装。
+也可以选择 [4B 完整离线包](https://github.com/wutong-lab/yiyan-paperbridge/releases/tag/v1.6.0-windows-4b-offline)或 [14B 完整离线包](https://github.com/wutong-lab/yiyan-paperbridge/releases/tag/v1.6.0-windows-14b-offline)。在对应页面下载 `Setup.exe` 及全部 `.bin`，放在同一个文件夹后运行安装程序；4B 共 3 个数据分卷，14B 共 6 个数据分卷。全部文件备好后可以拷贝到离线电脑上安装。
 
 ## 3. 内置模型与切换
 
@@ -66,7 +66,7 @@ NVIDIA 加速组件使用 CUDA 12.4，建议安装 **551.61 或更新版本的 N
 
 如果想增加另一种模型，可在模型窗口查看本机配置并点击对应下载按钮，或安装另一完整版。按需增加模型需要联网，完成后可离线使用。已经导入的论文与译稿保留在个人数据目录。
 
-需要较小的首次下载时，也可选择 [1.5 按需下载版](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/tag/v1.5.0-windows)：安装后在模型窗口下载 4B 或 14B，再进行离线翻译。
+需要较小的首次下载时，也可选择 [1.5 按需下载版](https://github.com/wutong-lab/yiyan-paperbridge/releases/tag/v1.5.0-windows)：安装后在模型窗口下载 4B 或 14B，再进行离线翻译。
 
 ## 4. 翻译论文并切换模型
 
@@ -102,3 +102,8 @@ NVIDIA 加速组件使用 CUDA 12.4，建议安装 **551.61 或更新版本的 N
 Windows 版使用 Qwen 官方 [Qwen3-4B-GGUF](https://huggingface.co/Qwen/Qwen3-4B-GGUF) 与 [Qwen3-14B-GGUF](https://huggingface.co/Qwen/Qwen3-14B-GGUF) 的 **Q4_K_M** 文件，由 [llama.cpp](https://github.com/ggml-org/llama.cpp) 在本机运行。下载固定到具体版本，并在启用前校验 SHA256。
 
 应用源码使用 AGPL-3.0；Qwen 模型使用 Apache-2.0；llama.cpp 使用 MIT。对应源码与依赖许可随应用提供，见 [第三方声明](../THIRD_PARTY_NOTICES.md)。
+
+
+## 选择 API 翻译
+
+打开工作室中的 **API 配置**，添加服务并保存测试。翻译时选择保存好的配置即可。密钥由系统加密保存，重启软件后仍可使用。API 模式需要联网，无需加载本地模型。详细步骤见 [API 配置](API_SETUP.md)。

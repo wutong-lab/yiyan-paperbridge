@@ -16,7 +16,10 @@ def _font(name):
 
 def math_glyphs(page):
     result = []
-    for block in page.get_text("rawdict")["blocks"]:
+    # ActualText can contain a whole TeX source string for a single painted
+    # equation glyph. Compare visible glyphs, not that accessibility annotation.
+    flags = fitz.TEXTFLAGS_RAWDICT | fitz.TEXT_IGNORE_ACTUALTEXT
+    for block in page.get_text("rawdict", flags=flags)["blocks"]:
         for line in block.get("lines", []):
             for span in line["spans"]:
                 if MATH_FONT.search(span["font"]):
@@ -28,7 +31,8 @@ def math_glyphs(page):
 
 def inspect_pdf(source, target, segments):
     report = {"source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-              "semantic_accuracy": "not_proven_by_mechanical_checks", "pages": []}
+              "semantic_accuracy": "not_proven_by_mechanical_checks",
+              "math_text_policy": "visible_glyphs_ignore_actualtext", "pages": []}
     with fitz.open(source) as original, fitz.open(target) as translated:
         report["page_count_preserved"] = len(original) == len(translated)
         if len(original) != len(translated):

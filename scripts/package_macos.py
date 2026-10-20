@@ -21,7 +21,7 @@ RELEASE = ROOT / "dist/release"
 APP = RELEASE / "译研.app"
 ASSETS = ROOT / "release-assets"
 SCRIPTS = ['build_macos.py', 'package_macos.py', 'prepare_release_licenses.py',
-           'download_model.py', 'install_layout.py', 'make_sample.py', 'bundle_models.py', 'split_release.py']
+           'verify_publication.py', 'download_model.py', 'install_layout.py', 'make_sample.py', 'bundle_models.py', 'split_release.py']
 
 
 def run(*args, **kwargs):
@@ -29,7 +29,7 @@ def run(*args, **kwargs):
 
 
 def ignore(folder, names):
-    return [name for name in names if name == '__pycache__' or name.endswith('.pyc') or name == '.DS_Store']
+    return [name for name in names if name in {'__pycache__', 'bin', 'obj'} or name.endswith('.pyc') or name == '.DS_Store']
 
 
 def archive_tree(root, destination, prefix):
@@ -43,6 +43,7 @@ def source_tree(destination, offline=False):
     destination.mkdir(parents=True, exist_ok=True)
     for name in ['paperbridge', 'desktop', 'tests']:
         shutil.copytree(ROOT / name, destination / name, ignore=ignore)
+    shutil.copytree(ROOT / 'docs', destination / 'docs', ignore=ignore)
     (destination / 'scripts').mkdir()
     for name in SCRIPTS:
         shutil.copy2(ROOT / 'scripts' / name, destination / 'scripts' / name)

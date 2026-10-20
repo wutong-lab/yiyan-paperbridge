@@ -1,6 +1,6 @@
 # 译研 Mac 安装与更新教程
 
-**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
+**[下载 Mac 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [备用加速下载](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [软件首页](../README.md)
 
 打开安装器，选择 4B 或 14B，点击“下载并安装”。应用、所选模型、字体和排版环境会自动装好，之后可直接离线使用。
 
@@ -74,3 +74,8 @@
 ## 下载服务
 
 应用和模型托管在 GitHub，由 GitHub 或公共加速通道分发；下载不连接开发者的个人电脑。备用线路由 ghfast.top、gh-proxy.com 提供，只传输公开安装资源。版本清单通过项目仓库及 jsDelivr 公共 CDN 获取，安装器内置本版安装清单与固定模型校验值。论文继续在本机处理。
+
+
+## 选择 API 翻译
+
+打开工作室中的 **API 配置**，添加服务并保存测试。翻译时选择保存好的配置即可。密钥由系统加密保存，重启软件后仍可使用。API 模式需要联网，无需加载本地模型。详细步骤见 [API 配置](API_SETUP.md)。

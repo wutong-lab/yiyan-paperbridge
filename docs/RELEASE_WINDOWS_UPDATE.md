@@ -1,6 +1,6 @@
 # 译研 · Windows 一键安装与应用更新
 
-**[下载 Windows 一键安装器](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v{VERSION}-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[已有译研，下载更新工具](https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v{VERSION}-windows-update/Yiyan-Updater.exe)**
+**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v{VERSION}-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[已有译研，下载更新工具](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v{VERSION}-windows-update/Yiyan-Updater.exe)**
 
 新电脑选择 **4B 或 14B** 后点击安装，完整环境准备好即可离线使用。已经安装的用户运行新版安装器或更新工具，继续使用原有模型。
 
@@ -10,4 +10,7 @@
 
 应用更新包不包含模型权重。模型继续保存在原有安装目录的 `Models` 或个人资料中的模型目录；论文与设置继续使用原工作室。
 
-[Windows 安装和更新教程](https://github.com/hengyuwu-dot/yiyan-paperbridge/blob/main/docs/WINDOWS_INSTALL.md) · [更新发布说明](https://github.com/hengyuwu-dot/yiyan-paperbridge/blob/main/docs/WINDOWS_RELEASE_MAINTENANCE.md)
+[Windows 安装和更新教程](https://github.com/wutong-lab/yiyan-paperbridge/blob/main/docs/WINDOWS_INSTALL.md) · [更新发布说明](https://github.com/wutong-lab/yiyan-paperbridge/blob/main/docs/WINDOWS_RELEASE_MAINTENANCE.md)
+
+
+本版新增可保存的 API 配置、本地 / API 切换、跨页段落与表格语境优化，以及本地模型硬件检查、加载和生成超时提示。

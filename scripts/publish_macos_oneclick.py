@@ -89,6 +89,7 @@ def build_app():
     shutil.copytree(ROOT/'release-assets/model-snapshots',source/'release-assets/model-snapshots')
     shutil.copytree(ROOT/'release-assets/macos-bootstrap',source/'release-assets/macos-bootstrap')
     package.archive_tree(source,ROOT/'dist/release'/f'PaperBridge-{VERSION}-Source.zip',f'PaperBridge-{VERSION}')
+    subprocess.run([sys.executable,str(ROOT/'scripts/verify_publication.py'),'--archive',str(ROOT/'dist/release'/f'PaperBridge-{VERSION}-Source.zip')],check=True)
     shutil.copy2(ROOT/'dist/release'/f'PaperBridge-{VERSION}-Source.zip',resources/'ApplicationSource.zip')
     # No weights are stored inside the app. Runtime, layout assets and licenses remain bundled.
     assert not (resources/'Models').exists()

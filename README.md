@@ -6,9 +6,17 @@
 
 Mac 与 Windows 都提供 **一键安装向导**：选择 4B 或 14B 后自动准备完整环境，装好即可离线翻译。Mac 与 Windows 后续更新都继续使用已安装模型，论文、译稿与设置也会保留。
 
-**[Mac 一键安装](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg) · [Windows 一键安装](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.9.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[Mac 安装教程](docs/MAC_INSTALL.md) · [Windows 安装教程](docs/WINDOWS_INSTALL.md)** · **[使用方法](#开始阅读)**
+**[Mac 一键安装](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [Windows 一键安装](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[Mac 安装教程](docs/MAC_INSTALL.md) · [Windows 安装教程](docs/WINDOWS_INSTALL.md)** · **[使用方法](#开始阅读)**
 
 ![译研 Mac 论文工作室](docs/images/workspace.jpg)
+
+## 1.13：本地模型与常用 API，自由切换
+
+在工作室的 **API 配置** 中添加 DeepSeek、通义千问、硅基流动或自定义 OpenAI 兼容接口，填写密钥、地址和模型，点击 **保存并测试**。以后翻译时直接选择已保存的服务，也可以继续选择本地 4B / 14B。
+
+Mac 使用系统钥匙串保存密钥，Windows 使用当前用户的 DPAPI 加密保存。API 翻译使用你选择的服务，会发送待译文本和必要的术语、上下文；本地模型继续支持离线翻译。API 模式无需加载本地大模型，不要求独立显卡。
+
+新版加强跨页段落衔接、表格和图注语境、专业译名一致性。开始本地翻译前检查内存与显卡；配置不足时给出切换 4B 或 API 的入口，模型异常或长时间无响应时停止任务并保留已完成内容。详见 [API 配置与使用](docs/API_SETUP.md)。
 
 ## 为科研阅读而设计
 
@@ -45,7 +53,7 @@ Mac 与 Windows 都提供 **一键安装向导**：选择 4B 或 14B 后自动�
 
 ## 安装到 Mac：选择模型，一键准备
 
-**[下载 Mac 一键安装器（约 1.3MB）](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [GitHub 原始下载](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.8.4-macos/Yiyan-Mac-OneClick-Setup.dmg) · [安装与更新教程](docs/MAC_INSTALL.md)
+**[下载 Mac 一键安装器（约 1.3MB）](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [GitHub 原始下载](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [安装与更新教程](docs/MAC_INSTALL.md)
 
 ![Mac 一键安装器：4B / 14B 自选](docs/images/macos-setup.png)
 
@@ -71,7 +79,7 @@ Mac 与 Windows 都提供 **一键安装向导**：选择 4B 或 14B 后自动�
 ## 开始阅读
 
 1. **导入论文**：点击“选择论文 PDF”，或将一篇、多篇英文 PDF 拖入工作室。
-2. **选择设置**：选择论文领域、翻译页码与本地模型；在“更多设置”中设置译后复核和自动清理。
+2. **选择设置**：选择论文领域、翻译页码、本地模型或已保存的 API 服务；在“更多设置”中设置译后复核和自动清理。
 3. **开始翻译**：点击“开始翻译”。批量导入后，点击“翻译待处理论文”。
 4. **对照阅读**：使用左右阅读区翻页、缩放，或进入“段落译文”查看和修改中文。
 5. **保存译稿**：从“导出”菜单选择中文 PDF、双语 PDF 或完整译文与核对记录。
@@ -88,7 +96,7 @@ light curve = 光变曲线
 
 ![Windows 一键安装：选择 4B 或 14B](docs/images/windows-setup.png)
 
-**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.9.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [安装与使用教程](docs/WINDOWS_INSTALL.md)
+**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.13.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [安装与使用教程](docs/WINDOWS_INSTALL.md)
 
 1. 双击打开 **Yiyan-Windows-OneClick-Setup.exe**。
 2. 选择 **4B 标准版**或 **14B 精译版**，点击 **下载并安装**。

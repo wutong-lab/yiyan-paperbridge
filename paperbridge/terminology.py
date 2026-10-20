@@ -15,6 +15,13 @@ def load_pack(domain):
 
 def pack_terms(domain):
     return {source: item["chinese"] for item in load_pack(domain)["entries"]
+            if not item.get("context")
+            for source in [item["english"], *item.get("variants", [])]}
+
+
+def contextual_pack_terms(domain, context):
+    return {source: item["chinese"] for item in load_pack(domain)["entries"]
+            if item.get("context") == context
             for source in [item["english"], *item.get("variants", [])]}
 
 
@@ -32,11 +39,32 @@ def terminology_entries(domain):
 def atomic_terms(text, terms):
     # Only curated noun phrases are substituted. Ambiguous words, verbs and
     # arbitrary user entries remain visible to the model for grammatical use.
-    names = {source.casefold() for scope in ["general", "astronomy"]
+    names = {source.casefold() for scope in ["general", "astronomy", "engineering"]
              for item in load_pack(scope)["entries"] if item.get("atomic")
              for source in [item["english"], *item.get("variants", [])]}
     from .glossary import matched_terms
     return {key: value for key, value in matched_terms(text, terms).items() if key.casefold() in names}
+
+
+def enforced_terms(text, terms):
+    """Explicit noun anchors; domain/context activation still belongs to glossary.
+
+    Keep only opted-in, unambiguous terminology fixed in longer paragraphs.
+    Verbs and arbitrary user phrases retain the existing grammatical path.
+    """
+    from .glossary import matched_terms
+    names = {source.casefold() for scope in ["general", "astronomy", "engineering"]
+             for item in load_pack(scope)["entries"] if item.get("enforce")
+             for source in [item["english"], *item.get("variants", [])]}
+    anchors = {key: value for key, value in terms.items() if key.casefold() in names}
+    import re
+    # Preserve the glossary's longest complete phrase. Binding only a suffix
+    # such as "corruptions" would break the prescribed "common corruptions"
+    # or "corruption severities" translation and create artificial warnings.
+    return {key: value for key, value in matched_terms(text, terms).items()
+            if key.casefold() in names or any(target in value and re.search(
+                r"(?<!\w)" + re.escape(source) + r"(?!\w)", key, re.I)
+                for source, target in anchors.items())}
 
 
 def counted_terms(text, terms):

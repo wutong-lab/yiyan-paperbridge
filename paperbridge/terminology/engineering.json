@@ -1,0 +1,259 @@
+{
+  "version": "2026.10.20",
+  "domain": "engineering",
+  "description": "计算机视觉图像退化与鲁棒性工作词表。短标签依据实际表格分组启用，用户译名优先。",
+  "sources": {
+    "imagenet_c": {
+      "title": "ImageNet-C: original corruption implementations",
+      "url": "https://github.com/hendrycks/robustness/blob/master/ImageNet-C/create_c/make_imagenet_c.py"
+    },
+    "shot_noise_cn": {
+      "title": "光学仪器：基于双线性滤波器的安防相机低照度去噪研究",
+      "url": "https://joi.usst.edu.cn/html/2023/4/20230412.htm"
+    }
+  },
+  "entries": [
+    {
+      "english": "image corruption",
+      "chinese": "图像退化",
+      "variants": [
+        "image corruptions"
+      ],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "corrupted image",
+      "chinese": "退化图像",
+      "variants": [
+        "corrupted images"
+      ],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "corruption robustness",
+      "chinese": "退化鲁棒性",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "fine-grained corruption robustness",
+      "chinese": "细粒度退化鲁棒性",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "comprehensive corruption robustness",
+      "chinese": "综合退化鲁棒性",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "Relative Corruption Error",
+      "chinese": "相对退化误差",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "Gaussian noise",
+      "chinese": "高斯噪声",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "shot noise",
+      "chinese": "散粒噪声",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c",
+        "shot_noise_cn"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "impulse noise",
+      "chinese": "脉冲噪声",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "speckle noise",
+      "chinese": "散斑噪声",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "defocus blur",
+      "chinese": "散焦模糊",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "motion blur",
+      "chinese": "运动模糊",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "zoom blur",
+      "chinese": "缩放模糊",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "glass blur",
+      "chinese": "玻璃模糊",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "计算机视觉语境的工作译名，可由本篇词表覆盖。"
+    },
+    {
+      "english": "corruption",
+      "chinese": "退化",
+      "variants": [
+        "corruptions"
+      ],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [],
+      "note": "只在图像与退化/噪声/鲁棒性证据共同出现时启用；不影响其他学科或政治、文件损坏等词义。",
+      "context": "image_degradation"
+    },
+    {
+      "english": "corrupted",
+      "chinese": "退化",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [],
+      "note": "仅在图像退化语境启用，形容词的语法衔接由模型完成。",
+      "context": "image_degradation"
+    },
+    {
+      "english": "Shot",
+      "chinese": "散粒",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c",
+        "shot_noise_cn"
+      ],
+      "note": "短表头：仅在其上级分组为 Noise 时启用。",
+      "context": "noise_table_heading"
+    },
+    {
+      "english": "Gaussian",
+      "chinese": "高斯",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "短表头：仅在其上级分组为 Noise 时启用。",
+      "context": "noise_table_heading"
+    },
+    {
+      "english": "Impulse",
+      "chinese": "脉冲",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "短表头：仅在其上级分组为 Noise 时启用。",
+      "context": "noise_table_heading"
+    },
+    {
+      "english": "Speckle",
+      "chinese": "散斑",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "短表头：仅在其上级分组为 Noise 时启用。",
+      "context": "noise_table_heading"
+    },
+    {
+      "english": "Frost",
+      "chinese": "霜冻",
+      "variants": [],
+      "atomic": true,
+      "enforce": true,
+      "source_ids": [
+        "imagenet_c"
+      ],
+      "note": "短表头：仅在其上级分组为 Weather 时启用。",
+      "context": "weather_table_heading"
+    }
+  ]
+}

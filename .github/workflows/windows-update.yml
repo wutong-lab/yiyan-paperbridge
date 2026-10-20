@@ -26,6 +26,8 @@ jobs:
         with: {dotnet-version: '8.0.x'}
       - uses: actions/setup-python@v6
         with: {python-version: '3.12'}
+      - name: Verify public source excludes local credentials and personal artifacts
+        run: python scripts/verify_publication.py
       - name: Verify download and atomic model-preserving update contracts
         run: |
           dotnet run --project desktop/windows-setup-tests/Tests.csproj -c Release
@@ -113,6 +115,8 @@ jobs:
           if($LASTEXITCODE -ne  0){throw 'Preservation checks failed'}
       - name: Verify actual offline PDF export with the updated app and original 4B model
         run: python scripts/smoke_windows_offline.py standard --bundle 'C:\PaperBridge升级验证\译研' --data C:\WindowsUpdateEvidence\PDF
+      - name: Verify installed DPAPI profiles, API protocol and hardware messages
+        run: python scripts/smoke_windows_api.py --bundle 'C:\PaperBridge升级验证\译研' --data C:\WindowsUpdateEvidence\API
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -128,6 +132,7 @@ jobs:
             C:/WindowsUpdateEvidence/Initial/ApplicationUpdate/*
             C:/WindowsUpdateEvidence/PDF/WINDOWS-OFFLINE-SMOKE-REPORT.json
             C:/WindowsUpdateEvidence/PDF/smoke.log
+            C:/WindowsUpdateEvidence/API/WINDOWS-API-HARDWARE-REPORT.json
           if-no-files-found: warn
   publish:
     needs: [build, validate]
@@ -146,7 +151,7 @@ jobs:
           from pathlib import Path
           import shutil
           root=Path('validation')
-          for name in ['WINDOWS-UPDATE-PRESERVATION.json','WINDOWS-OFFLINE-SMOKE-REPORT.json']:
+          for name in ['WINDOWS-UPDATE-PRESERVATION.json','WINDOWS-OFFLINE-SMOKE-REPORT.json','WINDOWS-API-HARDWARE-REPORT.json']:
               source=next(root.rglob(name));target=root/name
               if source!=target: shutil.copy2(source,target)
           PY

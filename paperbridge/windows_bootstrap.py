@@ -20,7 +20,15 @@ def main():
         lock_file(handle.fileno())
         target = ROOT / ".cache/babeldoc"
         seed = CODE_ROOT / ".cache/babeldoc"
+        if not (seed / "ready.json").is_file() and os.environ.get("PAPERBRIDGE_LAYOUT_SEED"):
+            seed = Path(os.environ["PAPERBRIDGE_LAYOUT_SEED"])
+        if not (seed / "ready.json").is_file():
+            existing = Path(os.environ.get("LOCALAPPDATA", ROOT.parent)) / "PaperBridge/.cache/babeldoc"
+            if (existing / "ready.json").is_file():
+                seed = existing
         if not (target / "ready.json").is_file():
+            if not (seed / "ready.json").is_file():
+                raise RuntimeError("未找到本地排版资源，请先完成正式版安装后再打开预览版")
             shutil.copytree(seed, target, dirs_exist_ok=True)
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"

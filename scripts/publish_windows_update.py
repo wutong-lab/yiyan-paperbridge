@@ -63,6 +63,7 @@ def build():
     publish('desktop/windows/PaperBridge.csproj',OUT/'TestLauncher',version='1.8.9')
     source=OUT/f'PaperBridge-{VERSION}-Windows-Source.zip'
     subprocess.run(['git','archive','--format=zip',f'--prefix=PaperBridge-{VERSION}/','--output',str(source),'HEAD'],cwd=ROOT,check=True)
+    subprocess.run([sys.executable,str(ROOT/'scripts/verify_publication.py'),'--archive',str(source)],check=True)
     report={'version':VERSION,'source_commit':os.environ.get('GITHUB_SHA'),'archive_bytes':archive.stat().st_size,'models_in_archive':False,'runtime_included':CONFIG['include_runtime'],'expanded_bytes':expanded,'components':components}
     (OUT/'WINDOWS-UPDATE-BUILD-REPORT.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
 
@@ -93,7 +94,10 @@ def promote():
     for field in ['native_menu_triggered','model_sha256_unchanged','model_timestamp_unchanged','papers_and_settings_unchanged','runtime_hashes_unchanged','offline_first_launch_passed','model_not_downloaded_during_update']:assert report[field] is True,field
     assert report['version']==VERSION
     pdf=json.loads((ROOT/'validation/WINDOWS-OFFLINE-SMOKE-REPORT.json').read_text(encoding='utf-8-sig'));assert pdf['status']=='complete' and pdf['downloads_forbidden'] and pdf['structure_passed']
-    for p in (evidence,ROOT/'validation/WINDOWS-OFFLINE-SMOKE-REPORT.json'):common.upload(r['id'],p)
+    api_report=ROOT/'validation/WINDOWS-API-HARDWARE-REPORT.json'
+    api=json.loads(api_report.read_text(encoding='utf-8-sig'))
+    assert api['passed'] and api['native_dpapi_roundtrip'] and api['reopened_profile_passed'] and not api['user_credential_used']
+    for p in (evidence,ROOT/'validation/WINDOWS-OFFLINE-SMOKE-REPORT.json',api_report):common.upload(r['id'],p)
     endpoint=f'/repos/{common.REPO}/contents/release-assets/windows-update.json'
     try:old=common.api(endpoint+'?ref=main')
     except Exception:old=None

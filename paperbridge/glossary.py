@@ -131,6 +131,14 @@ DOMAINS = {
         "attention mechanism": "注意力机制", "computational complexity": "计算复杂度",
         "graph neural network": "图神经网络", "graph neural networks": "图神经网络",
         "reinforcement learning": "强化学习", "cross-validation": "交叉验证",
+        "cross-view geo-localization": "跨视角地理定位", "cross-view geo localization": "跨视角地理定位",
+        "image corruption": "图像退化", "image corruptions": "图像退化",
+        "corrupted images": "退化图像", "corruption robustness": "退化鲁棒性",
+        "fine-grained corruption robustness": "细粒度退化鲁棒性",
+        "common corruption": "常见图像退化", "common corruptions": "常见图像退化",
+        "corruption severity": "退化严重程度", "corruption severities": "退化严重程度",
+        "convolutional neural networks": "卷积神经网络", "data augmentation": "数据增强",
+        "Contrast Limited Adaptive Histogram Equalization": "对比度受限自适应直方图均衡化",
     }},
 }
 
@@ -178,9 +186,33 @@ def matched_terms(text: str, terms: dict) -> dict:
     return matches
 
 
-def contextual_glossary(text, terms, domain, formula_hints=None):
+def contextual_glossary(text, terms, domain, formula_hints=None, reference=None):
     """Resolve known domain homonyms without matching a particular paper."""
     result = dict(terms)
+    if domain in {"engineering", DOMAINS["engineering"]["name"]}:
+        from .terminology import contextual_pack_terms
+        reference = reference if isinstance(reference, dict) else {}
+        table = reference.get("表格语境", {})
+        evidence = " ".join(str(reference.get(key, "")) for key in
+                            ["论文标题", "摘要背景", "当前章节"])
+        evidence += " " + str(table.get("表题", "")) + " " + text
+        vision = re.search(r"\b(?:images?|pixels?|computer vision|visual|aerial|geo[ -]?localization)\b", evidence, re.I)
+        degradation = re.search(r"\b(?:corrupt\w*|robust\w*|blur|nois\w*|degrad\w*)\b", evidence, re.I)
+        scopes = []
+        if vision and degradation:
+            scopes.append("image_degradation")
+        # A short label inherits its actual geometric parent, never merely a
+        # noise word elsewhere on the page (e.g. a camera's Shot column).
+        if len(text.split()) <= 3 and len(text) <= 60:
+            parent = str(table.get("上级表头", "")).strip().casefold()
+            if parent in {"noise", "noises"}:
+                scopes.append("noise_table_heading")
+            elif parent in {"weather", "weather conditions"}:
+                scopes.append("weather_table_heading")
+        for scope in scopes:
+            for phrase, target in contextual_pack_terms("engineering", scope).items():
+                if not any(key.casefold() == phrase.casefold() for key in result):
+                    result[phrase] = target
     if domain not in {"astronomy", DOMAINS["astronomy"]["name"]}:
         return result
     context = text + " " + " ".join((formula_hints or {}).values())
@@ -246,5 +278,17 @@ def normalize_line_hyphens(text, terms):
     # Lower-case prepositions glued to quantities occur at PDF font boundaries;
     # capitalized astronomical identifiers such as TOI11 stay literal.
     if len(re.findall(r"[A-Za-z]{2,}", text)) >= 3:
-        text = re.sub(r"\b(to|from|with|between|than)(?=\d)", r"\1 ", text)
+        # A dimensional adjective at a PDF font boundary is prose only when
+        # followed by a recognized task noun. Keep model IDs/code intact.
+        text = re.sub(r"(?<![\w/@:.+-])(for|with|in|of|on|to)([23]D)(objects?|images?|reconstruction|detection)\b",
+                      r"\1 \2 \3", text)
+        text = re.sub(r"(?<![\w/@:.+-])([23]D)(objects?|images?|reconstruction|detection)\b",
+                      r"\1 \2", text)
+        text = re.sub(r"(?<![\w/@:.+-])(to|from|with|between|than|of|in|by|at|over|under|all)(?=\d)", r"\1 ", text)
+        def conjunction(match):
+            # Repair conjunction + acronym/model ID without splitting valid
+            # code identifiers such as forEach, withDataFrame, or andThen.
+            name = match[2]
+            return match[1] + " " + name if re.search(r"\d|[A-Z].*[A-Z]", name) else match[0]
+        text = re.sub(r"(?<![\w/@:.+-])(and|or)([A-Z][A-Za-z0-9_-]*\b)", conjunction, text)
     return text

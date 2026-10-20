@@ -28,10 +28,11 @@ from .translation_audit import audit_translation
 from .review import has_issues, completion_message
 from .translator import ROOT, LocalTranslator, TranslationError
 from .paths import CODE_ROOT, WINDOWS
+from .local_runtime import LocalRuntimeError
 from .document_context import (DocumentContext, VERSION as CONTEXT_VERSION, read_source_profile,
-                               term_candidates, glossary_entries, active_document_terms, signature)
+                               term_candidates, glossary_entries, active_document_terms, signature, consistent_term_proposals)
 
-PIPELINE_VERSION = "full-7"
+PIPELINE_VERSION = "full-9"
 
 
 def write_json(path, data):
@@ -128,19 +129,31 @@ def publish_export(staging, folder):
         raise
 
 
-def run(job_id, replay=False, layout_test=False, repair=False, missing_only=False):
+def run(job_id, replay=False, layout_test=False, repair=False, missing_only=False, api_key=None):
     if not re.fullmatch(r"[0-9a-f]{32}", job_id):
         raise ValueError("无效的论文编号")
     if not ready():
         raise RuntimeError("请先准备本地排版资源")
-    if not replay and not layout_test and not WINDOWS:
+    folder = ROOT / "data" / "jobs" / job_id
+    job = json.loads((folder / "job.json").read_text())
+    settings = job["settings"]
+    api_mode = settings.get("provider", "local") in {"deepseek", "api"} and not replay and not layout_test
+    api_source = settings.get("provider", "local") in {"deepseek", "api"} and not layout_test
+    if not replay and not layout_test and not WINDOWS and not api_mode:
         # MLX's process-wide GPU runtime must outlive BabelDOC's temporary
         # translation threads. Initialize it on the main thread, without
         # loading any weights; weights are still loaded only when needed.
         import mlx.core
         import mlx_lm
     initialize()
-    if WINDOWS:
+    if api_mode:
+        # Layout, fonts and tokenization stay local. Only our explicit DeepSeek
+        # transport can use the network; dependencies cannot download resources.
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        from .provider_network import block_worker_network
+        block_worker_network()
+    elif WINDOWS:
         from .gguf_inference import block_external_network
         block_external_network()
     else:
@@ -160,8 +173,6 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     from babeldoc.progress_monitor import ProgressMonitor
     import pymupdf as fitz
 
-    folder = ROOT / "data" / "jobs" / job_id
-    job = json.loads((folder / "job.json").read_text())
     prior_pipeline = job.get("pipeline_version") or (job.get("export_report") or {}).get("pipeline_version") or "legacy"
     prior_code_digest = job.get("pipeline_code_sha256")
     code_hashes = {str(path.relative_to(CODE_ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -184,7 +195,16 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     if WINDOWS:
         from .windows_models import model_directory
         model_dir = model_directory(settings.get("profile", "standard"))
-    local = LocalTranslator(model_dir, folder / "translation-failures")
+    if api_mode:
+        from .providers import DeepSeekTranslator, DEFAULT_MODEL
+        if settings.get("provider") == "api" and not settings.get("api_config"):
+            raise RuntimeError("API 配置快照缺失，请在翻译服务中重新选择配置")
+        local = DeepSeekTranslator(api_key, settings.get("api_model", DEFAULT_MODEL),
+                                  folder / "translation-failures",
+                                  cancelled=lambda: (folder / "cancel.request").exists(),
+                                  config=settings.get("api_config") if settings.get("provider") == "api" else None)
+    else:
+        local = LocalTranslator(model_dir, folder / "translation-failures")
     if not replay and not layout_test and not local.installed():
         raise RuntimeError("选定的本地模型尚未准备完毕")
     glossary = terms_for(settings["domain"], settings["glossary"])
@@ -193,8 +213,8 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     previous_text = {(s["page"], s["source"]): s for s in job["segments"]}
     cache_path = folder / "paragraph-cache.json"
     cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
-    quality_settings = {k: v for k, v in settings.items() if k not in {"pages", "auto_cleanup"}}
-    installation = json.loads((model_dir / "installation.json").read_text()) if local.installed() else {}
+    quality_settings = {k: v for k, v in settings.items() if k not in {"pages", "auto_cleanup", "allow_slow_cpu", "force_cpu"}}
+    installation = json.loads((model_dir / "installation.json").read_text()) if not api_source and local.installed() else {}
     digest = hashlib.sha256(json.dumps({"settings": quality_settings, "glossary": glossary,
                                        "model_revision": installation.get("revision"),
                                        "version": PIPELINE_VERSION, "code": code_digest}, sort_keys=True).encode()).hexdigest()
@@ -204,6 +224,8 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
     body_fonts = {}
     prepared = {}
     linked_results = {}
+    provider_failure = None
+    local_failure = None
     document_plan = None
     save_lock = threading.RLock()
     context = threading.local()
@@ -215,6 +237,21 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             job["segments"] = sorted(records.values(), key=lambda s: (s["page"], s["bbox"][1], s["bbox"][0]))
             write_json(folder / "worker-state.json", job)
             emit("state")
+
+    if api_mode:
+        job["api_usage"] = dict(local.inference.stats)
+        def record_usage(usage):
+            job["api_usage"] = usage
+            save()
+        local.inference.on_usage = record_usage
+    elif not replay:
+        job.pop("api_usage", None)
+        def record_local_activity(state):
+            job["local_runtime"] = state
+            job["message"] = state["message"]
+            save()
+        if not layout_test:
+            local.configure_runtime(settings, record_local_activity, lambda: (folder / "cancel.request").exists())
 
     def cancelled():
         return (folder / "cancel.request").exists()
@@ -241,6 +278,9 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             return self.do_translate(text, rate_limit_params)
 
         def do_translate(self, text, rate_limit_params=None):
+            nonlocal provider_failure, local_failure
+            if provider_failure:
+                raise RuntimeError(provider_failure)
             seg = context.segment
             if cancelled():
                 cfg.cancel_translation()
@@ -253,7 +293,7 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             seg["context_signature"] = signature(context.reference)
             seg["section_context"] = context.reference.get("当前章节", "")
             old = previous.get(seg["id"], {})
-            effective_glossary = contextual_glossary(text, glossary, settings["domain"], context.formula_hints)
+            effective_glossary = contextual_glossary(text, glossary, settings["domain"], context.formula_hints, context.reference)
             if (replay or repair) and old.get("source") != text:
                 old = previous_text.get((seg["page"], text), {})
             literal = literal_reason(text, seg["layout_label"]) or scientific_heading_reason(text, seg["layout_label"])
@@ -342,7 +382,19 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                     seg["notes"] = list(dict.fromkeys(notes + ["自动复核疑点：" + item["message"] for item in seg["translation_audit"]]))
                 if seg["status"] != "edited":
                     seg["status"] = "review" if has_issues(seg, seg.get("translation_audit", [])) else "translated"
-            except TranslationError as exc:
+            except Exception as exc:
+                from .providers import ProviderError
+                if isinstance(exc, (ProviderError, LocalRuntimeError)):
+                    if isinstance(exc, LocalRuntimeError):
+                        local_failure = exc
+                        job["failure"] = exc.public()
+                    provider_failure = str(exc)
+                    cfg.cancel_translation()
+                    job["message"] = provider_failure
+                    save()
+                    raise
+                if not isinstance(exc, TranslationError):
+                    raise
                 seg.update(status="failed", reason=str(exc), translation="", notes=[])
                 value = text
             save()
@@ -399,9 +451,17 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                             prepared[seg["id"]] = {"source": seg["source"], "formula_hints": seg["formula_hints"]}
             save()
             try:
-                document_plan = DocumentContext(list(records.values()), sections, page_sizes, source_profile)
+                table_regions = [{"page": p.page_number + 1,
+                                  "bbox": [layout.box.x, p.cropbox.box.y2-layout.box.y2,
+                                           layout.box.x2, p.cropbox.box.y2-layout.box.y]}
+                                 for p in docs.page for layout in p.page_layout if layout.class_name == "table"]
+                document_plan = DocumentContext(list(records.values()), sections, page_sizes, source_profile, table_regions)
+                glossary = contextual_glossary("", glossary, settings["domain"], reference={
+                    "论文标题": document_plan.title, "摘要背景": document_plan.abstract})
                 term_key = signature({"source": hashlib.sha256((folder / "original.pdf").read_bytes()).hexdigest(),
                                       "domain": settings["domain"], "base": glossary,
+                                      "provider": settings.get("provider", "local"), "api_model": settings.get("api_model") if api_source else None,
+                                      "api_config": settings.get("api_config") if api_source else None,
                                       "model_revision": installation.get("revision"), "version": CONTEXT_VERSION, "code": code_digest})
                 old_terms = job.get("document_terminology", {})
                 proposals = [e for e in old_terms.get("suggestions", old_terms.get("entries", [])) if e.get("origin") == "model"] if old_terms.get("signature") == term_key else []
@@ -414,9 +474,13 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                         proposals = local.extract_terms(candidates, {"标题": document_plan.title, "摘要": document_plan.abstract}, DOMAINS[settings["domain"]]["name"])
                     except TranslationError as exc:
                         notes.append("自动术语建议未生成，使用已有专业词表：" + str(exc))
+                proposals, conflicts = consistent_term_proposals(proposals, glossary)
+                if conflicts:
+                    notes.append("已按专业词库约束排除 " + str(len(conflicts)) + " 条有冲突的自动术语建议")
                 entries = glossary_entries(source_profile, glossary, proposals, job.get("document_term_overrides", ""))
                 job["document_terminology"] = {"version": CONTEXT_VERSION, "signature": term_key, "entries": entries,
-                                              "suggestions": proposals, "notes": notes, "model_suggestions": len(proposals), "semantic_review": "pending"}
+                                              "suggestions": proposals, "notes": notes, "conflicts": conflicts,
+                                              "model_suggestions": len(proposals), "semantic_review": "pending"}
                 write_json(folder / "document-terminology.json", job["document_terminology"])
                 glossary = active_document_terms(job, glossary)
                 digest = signature([digest, glossary, CONTEXT_VERSION])
@@ -440,6 +504,8 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             seg = paragraph_records[id(paragraph)]
             context.segment = seg
             context.reference = document_plan.for_segment(seg)
+            if context.reference.get("表格语境"):
+                seg["table_context"] = context.reference["表格语境"]
             if seg["status"] in {"preserved", "failed"}:
                 if args and args[0]:
                     args[0].advance()
@@ -582,8 +648,8 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             reason = "图内文字保留原文"
         elif para.pdf_paragraph_composition and all(c.pdf_formula is not None for c in para.pdf_paragraph_composition):
             reason = "独立公式保留原文"
-        elif frontmatter_reason(source, number, box, height):
-            reason = frontmatter_reason(source, number, box, height)
+        elif frontmatter_reason(source, number, box, height, layout_label=para.layout_label):
+            reason = frontmatter_reason(source, number, box, height, layout_label=para.layout_label)
         elif count_words(source) == 0:
             reason = "公式、数值或页码保留原文"
         elif para.layout_label in {"abandon", "figure"} and not footnote:
@@ -663,6 +729,11 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                              finish_callback=lambda **event: None, report_interval=2,
                              cancel_event=threading.Event()) as monitor:
             result = high_level.do_translate(monitor, cfg)
+        if provider_failure:
+            if local_failure:
+                raise local_failure
+            from .providers import ProviderError
+            raise ProviderError(provider_failure)
         job["protected_numeric_scripts"] = protected_numeric_scripts
         if cancelled():
             raise TranslationError("已停止，未发布新的 PDF")
@@ -695,7 +766,7 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
             done = [s for s in candidate if s["exported"]]
             words = sum(count_words(s["source"]) for s in candidate)
             covered = sum(count_words(s["source"]) for s in done)
-            job["export_report"] = {"engine": "BabelDOC 0.6.4 + local llama.cpp" if WINDOWS else "BabelDOC 0.6.4 + direct MLX", "pipeline_version": PIPELINE_VERSION, "layout_test": layout_test,
+            job["export_report"] = {"engine": "BabelDOC 0.6.4 + Model API" if api_source else "BabelDOC 0.6.4 + local llama.cpp" if WINDOWS else "BabelDOC 0.6.4 + direct MLX", "pipeline_version": PIPELINE_VERSION, "layout_test": layout_test,
                                     "page_count": len(translated), "original_page_count": job["page_count"],
                                     "page_count_preserved": geometry_ok,
                                     "natural_language_paragraphs": len(candidate), "exported_paragraphs": len(done),
@@ -703,7 +774,7 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                                     "source_word_coverage_percent": round(100 * covered / max(1, words), 1),
                                     "coverage_definition": "选定页面中至少含三个英文词的自然语言段落（含文字脚注）；不含参考文献、图内文字、纯公式、学术名称、作者机构地址和页眉页脚；以PDF实际文字提取确认",
                                     "elapsed_seconds": round(time.time() - started, 1), "pdf_compression": compression, "semantic_review": "pending",
-                                    "inference_performance": local.inference.stats,
+                                    "inference_performance": job.get("api_usage", {}) if api_source and replay else local.inference.stats,
                                     "document_terminology_count": len(job.get("document_terminology", {}).get("entries", [])),
                                     "document_context": job.get("document_context", {}),
                                     "resource_policy": {"release_layout_before_inference": True,
@@ -719,7 +790,10 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
                                     "translation_code_versions": dict(Counter(s.get("translation_code_sha256") or "legacy/not-recorded" for s in records.values() if s["translation"])),
                                     "automatic_audit_issue_count": sum(len(s.get("translation_audit", [])) for s in records.values()),
                                     "formula_components_preserved": all(s.get("formula_components_preserved", True) for s in records.values()),
-                                    "model_api": False, "network_blocked_during_translation": True}
+                                    "provider": settings.get("provider", "local"),
+                                    "api_model": settings.get("api_model") if api_source else None,
+                                    "model_api": api_source, "api_requests_this_run": api_mode,
+                                    "network_blocked_during_translation": not api_mode}
         from .quality import inspect_pdf
         evidence = inspect_pdf(folder / "original.pdf", translated_path, list(records.values()))
         write_json(staging / "quality.json", evidence)
@@ -735,11 +809,19 @@ def run(job_id, replay=False, layout_test=False, repair=False, missing_only=Fals
         job["message"] = completion_message(sum(has_issues(s, s.get("translation_audit", [])) for s in records.values())) if not layout_test else "排版诊断已完成，未执行翻译"
         save()
     except BaseException as exc:
+        # BabelDOC can surface its cancellation after a terminal engine error.
+        # Keep the original model failure as the task's diagnostic and exit.
+        if local_failure:
+            exc = local_failure
+        if isinstance(exc, LocalRuntimeError):
+            job["failure"] = exc.public()
         if not output_published:
             job["export_report"] = previous_report
         job.update(status="cancelled" if cancelled() else "failed",
-                   message="已停止，完成的段落已保存，可继续" if cancelled() else f"全文处理失败：{type(exc).__name__}: {str(exc)[:200]}")
+                   message="已停止，完成的段落已保存，可继续" if cancelled() else f"全文处理失败：{provider_failure or str(exc)[:200]}")
         save()
+        if local_failure:
+            raise local_failure from None
         raise
     finally:
         local.unload()
@@ -756,13 +838,15 @@ def worker_main():
     parser.add_argument("--layout-test", action="store_true")
     parser.add_argument("--repair", action="store_true")
     parser.add_argument("--repair-missing", action="store_true")
+    parser.add_argument("--provider-stdin", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
     if sum([args.replay, args.layout_test, args.repair, args.repair_missing]) > 1:
         parser.error("--replay、--layout-test、--repair、--repair-missing 请只选择一种")
     exit_code = 0
     try:
-        run(args.job_id, args.replay, args.layout_test, args.repair or args.repair_missing, args.repair_missing)
+        secret = json.loads(sys.stdin.readline(2048)).get("api_key") if args.provider_stdin else None
+        run(args.job_id, args.replay, args.layout_test, args.repair or args.repair_missing, args.repair_missing, secret)
     except BaseException:
         import traceback
         traceback.print_exc()

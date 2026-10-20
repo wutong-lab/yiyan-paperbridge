@@ -24,6 +24,7 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
     var portable = false
     var bundledModels = false
     var sharedDataDirectory: String?
+    var privatePreview = false
     var downloads: [ObjectIdentifier: (temporary: URL, destination: URL)] = [:]
     var activeDownloads = Set<ObjectIdentifier>()
     var downloadNavigation = false
@@ -36,10 +37,11 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
-        makeMenus()
-        makeWindow()
         let config = Bundle.main.url(forResource: "Project", withExtension: "plist")
             .flatMap { NSDictionary(contentsOf: $0) }
+        privatePreview = config?["PrivatePreview"] as? Bool == true
+        makeMenus()
+        makeWindow()
         portable = config?["Portable"] as? Bool == true
         bundledModels = config?["BundledModels"] as? Bool == true
         sharedDataDirectory = config?["SharedDataDirectory"] as? String
@@ -93,6 +95,20 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
         for name in ["models", "data/jobs", "output/pdf", "tmp"] {
             try fm.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
         }
+        if privatePreview {
+            let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            for name in ["qwen3-14b", "qwen3-4b"] {
+                let target = root.appendingPathComponent("models/" + name)
+                if fm.fileExists(atPath: target.path) { continue }
+                for workspace in ["PaperBridge-Offline", "PaperBridge"] {
+                    let existing = support.appendingPathComponent(workspace + "/models/" + name)
+                    if fm.fileExists(atPath: existing.appendingPathComponent("installation.json").path) {
+                        try fm.createSymbolicLink(at: target, withDestinationURL: existing)
+                        break
+                    }
+                }
+            }
+        }
         // Full offline edition ships unchanged public weights. Link to the
         // installed app instead of creating a second 10 GB model copy.
         for name in ["qwen3-14b", "qwen3-4b"] {
@@ -140,7 +156,7 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
     func makeWindow() {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 880),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "译研 · SCI 论文翻译"
+        window.title = privatePreview ? "译研预览版 · 本地 / API" : "译研 · SCI 论文翻译"
         window.minSize = NSSize(width: 940, height: 650)
         window.setFrameAutosaveName("PaperBridgeMainWindow")
         window.isReleasedWhenClosed = false
@@ -212,6 +228,7 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
         _ = menu("译研", [("关于译研", #selector(about), ""), ("-", nil, ""),
                           ("检查更新…", #selector(checkForUpdates), ""), ("-", nil, ""), ("隐藏译研", #selector(hideApp), "h"), ("退出译研", #selector(quitApp), "q")])
         _ = menu("文件", [("导入论文 PDF…", #selector(openPDF), "o"), ("打开论文工作室", #selector(home), "1"),
+                          ("API 配置…", #selector(apiSettings), ""),
                           ("-", nil, ""), ("在访达中查看导出文件", #selector(showOutput), ""),
                           ("在访达中查看软件目录", #selector(showProject), ""), ("关闭窗口", #selector(closeWindow), "w")])
         let edit = menu("编辑", [])
@@ -228,9 +245,11 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
 
     @objc func about() {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "译研 PaperBridge", .applicationVersion: (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") + " · Mac 桌面版",
-            .credits: NSAttributedString(string: "SCI 论文英译中 · 本地模型 · 原译对照\n" + (portable ? "论文始终在本机处理，支持内置模型离线使用。" : "模型和论文保存在原软件目录。"))])
+            .credits: NSAttributedString(string: "SCI 论文英译中 · 本地模型 / 大模型 API · 原译对照\n保存常用 API 配置，选择翻译服务，在原有版面上阅读中文。")])
     }
+    @objc func apiSettings() { showWindow(); web.evaluateJavaScript("showAPISettings()", completionHandler: nil) }
     @objc func checkForUpdates() {
+        if privatePreview { alert("本地预览版", "此版本通过本机预览包更新。正式更新通道继续保留，模型沿用本机文件。"); return }
         guard let base = service, ready else { alert("正在启动", "请等待工作室准备好后检查更新。"); return }
         network.dataTask(with: base.appendingPathComponent("api/desktop/status")) { data, _, _ in
             let state = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
@@ -272,15 +291,25 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
         }
     }
     func captureSmoke() {
+        let apiView = CommandLine.arguments.contains("--api-settings-smoke")
+        let hardwareView = CommandLine.arguments.contains("--hardware-settings-smoke")
+        if apiView { web.evaluateJavaScript("showAPISettings()", completionHandler: nil) }
+        // UI fixture only: it does not override the engine's actual checks.
+        if hardwareView, let input = ProcessInfo.processInfo.environment["PAPERBRIDGE_SMOKE_HARDWARE"],
+           let data = input.data(using:.utf8), let value = try? JSONSerialization.jsonObject(with:data),
+           let encoded = try? JSONSerialization.data(withJSONObject:value), let json = String(data:encoded,encoding:.utf8) {
+            web.evaluateJavaScript("showHardwareSettings(\(json), {provider:'local',profile:'precision'},()=>{}); true", completionHandler:nil)
+        }
         DispatchQueue.main.asyncAfter(deadline:.now()+1) {
             self.web.takeSnapshot(with:nil) { image,error in
                 let folder=self.root.appendingPathComponent(".cache/desktop")
-                if let image=image, let tiff=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:tiff),let data=bitmap.representation(using:.png,properties:[:]) {try? data.write(to:folder.appendingPathComponent("macos-ui-smoke.png"))}
+                let name = hardwareView ? "macos-hardware-smoke" : apiView ? "macos-api-settings-smoke" : "macos-ui-smoke"
+                if let image=image, let tiff=image.tiffRepresentation,let bitmap=NSBitmapImageRep(data:tiff),let data=bitmap.representation(using:.png,properties:[:]) {try? data.write(to:folder.appendingPathComponent(name + ".png"))}
                 guard let service=self.service else {exit(1)}
                 self.network.dataTask(with:service.appendingPathComponent("api/status")) { data,response,_ in
-                    var record:[String:Any] = ["loaded":error==nil,"version":Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "","workspace":self.root.path]
+                    var record:[String:Any] = ["loaded":error==nil,"version":Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "","workspace":self.root.path,"api_settings_view":apiView,"hardware_view_simulated":hardwareView]
                     if let data=data,let status=try? JSONSerialization.jsonObject(with:data) {record["status"]=status}
-                    if let encoded=try? JSONSerialization.data(withJSONObject:record,options:[.prettyPrinted,.sortedKeys]) {try? encoded.write(to:folder.appendingPathComponent("macos-ui-smoke.json"))}
+                    if let encoded=try? JSONSerialization.data(withJSONObject:record,options:[.prettyPrinted,.sortedKeys]) {try? encoded.write(to:folder.appendingPathComponent(name + ".json"))}
                     DispatchQueue.main.async {NSApp.terminate(nil)}
                 }.resume()
             }
@@ -437,6 +466,12 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
         web.load(URLRequest(url: base))
     }
     func startupError(_ text: String) {
+        if let root = root {
+            let folder = root.appendingPathComponent(".cache/desktop")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let path = folder.appendingPathComponent("startup-error.log")
+            try? ("\(Date()): \(text)\n").write(to: path, atomically: true, encoding: .utf8)
+        }
         ready = false; splash.isHidden = false; web.isHidden = true
         spinner.stopAnimation(nil); statusLabel.stringValue = text; retryButton.isHidden = false
     }

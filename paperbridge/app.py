@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -34,6 +35,12 @@ from .storage import disk_usage, storage_inventory, clear_optional_files, safe_p
 from .review import reading_segments, issue_notes, completion_message
 
 from .paths import CODE_ROOT, WINDOWS, hidden_process
+from .providers import credentials, DeepSeekClient, APIClient, MODELS, DEFAULT_MODEL, ProviderError
+from .api_profiles import ProfileManager
+from .secret_store import SecretStoreError
+from .local_runtime import assess_local, require_local, LocalRuntimeError, RuntimeWatchdog, ADVICE
+
+api_profiles = ProfileManager(ROOT)
 
 PRECISION_DIR = ROOT / "models" / "qwen3-14b"
 if WINDOWS:
@@ -52,6 +59,16 @@ jobs = {}
 active_operations = set()
 upload_tasks = set()
 install_state = {"status": "idle", "message": "", "bytes": 0}
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request, exc):
+    from fastapi.responses import JSONResponse
+    # Pydantic normally echoes invalid input values, including an entered key.
+    # Return only locations and validation messages for every settings endpoint.
+    errors = [{"loc": list(item["loc"]), "msg": item["msg"], "type": item["type"]}
+              for item in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.middleware("http")
@@ -148,6 +165,11 @@ def status():
             "domains": [{"id": k, "name": v["name"]} for k, v in DOMAINS.items()]}
     result["platform"] = "windows" if WINDOWS else "macos"
     result["app_version"] = os.environ.get("PAPERBRIDGE_APP_VERSION", "development")
+    result["deepseek"] = credentials.status()
+    try:
+        result["api_profiles"] = api_profiles.status()
+    except ValueError as exc:
+        result["api_profiles"] = {"profiles": [], "error": str(exc)}
     if WINDOWS:
         from .windows_models import hardware, default_profile
         result["hardware"] = hardware()
@@ -164,6 +186,85 @@ def status():
         result["default_profile"] = preferred if available.get(preferred) else ("precision" if available["precision"] else "standard")
         result["managed_models"] = bool(marker.get("models_managed_separately")) if isinstance(marker, dict) else False
     return result
+
+
+class APIKeySettings(BaseModel):
+    model_config = {"extra": "forbid"}
+    api_key: str = Field(min_length=8, max_length=512)
+
+
+class APIProfileSettings(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(max_length=80)
+    kind: str = Field(default="custom", max_length=30)
+    base_url: str = Field(max_length=1000)
+    model: str = Field(max_length=200)
+    api_key: str = Field(default="", max_length=512)
+    json_mode: bool = False
+    stream_usage: bool = False
+
+
+def profile_action(action):
+    try:
+        return action()
+    except (ValueError, SecretStoreError, ProviderError) as exc:
+        raise HTTPException(409, str(exc)) from None
+    except OSError:
+        raise HTTPException(409, "无法保存或读取 API 配置，请检查软件数据目录的访问权限") from None
+
+
+@app.get("/api/providers/profiles")
+def list_api_profiles():
+    return profile_action(api_profiles.status)
+
+
+@app.post("/api/providers/profiles")
+def create_api_profile(settings: APIProfileSettings):
+    return profile_action(lambda: api_profiles.save(settings.model_dump()))
+
+
+@app.put("/api/providers/profiles/{profile_id}")
+def update_api_profile(profile_id: str, settings: APIProfileSettings):
+    return profile_action(lambda: api_profiles.save(settings.model_dump(), profile_id))
+
+
+@app.delete("/api/providers/profiles/{profile_id}")
+def delete_api_profile(profile_id: str):
+    profile_action(lambda: api_profiles.delete(profile_id))
+    return {"deleted": True}
+
+
+@app.post("/api/providers/profiles/{profile_id}/test")
+def test_api_profile(profile_id: str):
+    def test():
+        config, key = api_profiles.resolve(profile_id)
+        return APIClient(key, config).test_connection()
+    return profile_action(test)
+
+
+@app.put("/api/providers/deepseek/key")
+def set_deepseek_key(settings: APIKeySettings):
+    try:
+        credentials.set(settings.api_key)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+    return credentials.status()
+
+
+@app.delete("/api/providers/deepseek/key")
+def clear_deepseek_key():
+    credentials.clear()
+    return credentials.status()
+
+
+@app.post("/api/providers/deepseek/test")
+def test_deepseek_connection(model: str = DEFAULT_MODEL):
+    if model not in MODELS:
+        raise HTTPException(400, "未知的 DeepSeek 模型")
+    try:
+        return DeepSeekClient(credentials.get(), model).test_connection()
+    except ProviderError as exc:
+        raise HTTPException(409, str(exc)) from None
 
 
 def precision_installed():
@@ -497,6 +598,7 @@ def preview(job_id: str, number: int, version: str = "original", width: int = 11
 
 
 class Settings(BaseModel):
+    model_config = {"extra": "forbid"}
     domain: str = "general"
     glossary: str = Field(default="", max_length=50000)
     polish: bool = True
@@ -504,6 +606,31 @@ class Settings(BaseModel):
     engine: str = "full"
     profile: str = "precision"
     auto_cleanup: bool = True
+    provider: str = "local"
+    api_model: str = DEFAULT_MODEL
+    api_profile_id: str = Field(default="", max_length=32)
+    allow_slow_cpu: bool = False
+    force_cpu: bool = False
+
+
+def local_preflight(settings, *, check_available=False):
+    if settings.get("provider", "local") != "local":
+        return None
+    try:
+        return require_local(settings.get("profile", "precision"), settings, windows=WINDOWS, check_available=check_available)
+    except LocalRuntimeError as exc:
+        raise HTTPException(409, exc.public()) from None
+
+
+@app.get("/api/local/preflight")
+def inspect_local_hardware(profile: str = "precision", force_cpu: bool = False):
+    if profile not in {"standard", "precision"}:
+        raise HTTPException(400, "未知的本地模型")
+    with state_lock:
+        occupied = bool(active_operations) or any(j.get("status") in {"queued", "running", "exporting"} for j in jobs.values())
+    result = assess_local(profile, windows=WINDOWS, force_cpu=force_cpu, check_available=not occupied)
+    result["memory_rechecked_before_loading"] = True
+    return result
 
 
 class StorageSettings(BaseModel):
@@ -547,7 +674,7 @@ def make_export(job):
     save_job(job)
 
 
-def run_full_translation(job_id, replay=False, repair=False, missing_only=False, run_token=None):
+def run_full_translation(job_id, replay=False, repair=False, missing_only=False, run_token=None, api_key=None):
     job = get_job(job_id)
     folder = DATA / job_id
     if not replay:
@@ -560,7 +687,9 @@ def run_full_translation(job_id, replay=False, repair=False, missing_only=False,
                 return
             # Claim the queue entry before loading resources. It cannot be
             # resubmitted while the worker is starting or stopping.
-            job.update(status="running", message="正在准备本地模型与排版资源")
+            job.update(status="running", message="正在准备翻译与排版资源")
+            job.pop("local_runtime", None)
+            job.pop("failure", None)
             save_job(job)
     with state_lock:
         active_operations.add(job_id)
@@ -569,16 +698,34 @@ def run_full_translation(job_id, replay=False, repair=False, missing_only=False,
                                                "elapsed_seconds": job["export_report"]["elapsed_seconds"]}
         started = start_timing(job, "export" if replay else "repair" if repair else "translation")
         save_job(job)
-    command = [sys.executable, "-m", "paperbridge.full_worker", job_id]
+    # Embedded Windows Python can have an isolated _pth file pointing at the
+    # installed release. Explicitly select this engine in child processes too.
+    command = [sys.executable, "-X", "utf8", "-c",
+               "import sys,runpy; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module('paperbridge.full_worker',run_name='__main__')",
+               str(CODE_ROOT), job_id]
+    if api_key and not replay:
+        command.append("--provider-stdin")
     if replay:
         command.append("--replay")
     if repair:
         command.append("--repair-missing" if missing_only else "--repair")
     process = None
+    watchdog = None
     try:
         with (folder / "full-worker.log").open("a", encoding="utf-8") as log:
-            process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=log,
+            process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.PIPE if api_key and not replay else subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log,
                                        text=True, encoding="utf-8", bufsize=1, **hidden_process())
+            if not replay and job.get("settings", {}).get("provider", "local") == "local":
+                def runtime_state():
+                    with state_lock:
+                        return dict(job.get("local_runtime") or {})
+                watchdog = RuntimeWatchdog(process, runtime_state)
+                watchdog.start()
+            # Credentials never appear in process arguments, environment, or job
+            # files. The child consumes this one line before initializing layout.
+            if api_key and not replay:
+                process.stdin.write(json.dumps({"api_key": api_key}) + "\n")
+                process.stdin.close()
             for line in process.stdout:
                 try:
                     event = json.loads(line)
@@ -598,8 +745,15 @@ def run_full_translation(job_id, replay=False, repair=False, missing_only=False,
                         job["cancel_requested"] = cancelled
                         save_job(job)
             code = process.wait()
+            if watchdog:
+                watchdog.stop()
+            if watchdog and watchdog.failure:
+                job.update(status="cancelled" if job.get("cancel_requested") else "failed",
+                           message="已停止，已完成译文保留" if job.get("cancel_requested") else watchdog.failure["message"], failure=watchdog.failure)
             if code and job["status"] not in {"failed", "cancelled"}:
-                job.update(status="failed", message="全文处理进程中断，请查看本地运行记录；已完成译文保留")
+                message = "翻译进程意外退出，可能是内存压力或系统中断；已完成译文保留。" + ADVICE
+                failure = LocalRuntimeError("model_process_exited", message).public() if job.get("settings", {}).get("provider", "local") == "local" else None
+                job.update(status="failed", message=message if failure else "API 处理进程已中断，已完成译文保留", failure=failure)
             # The isolated process has exited, so its model, GPU tensors and
             # native layout sessions have been reclaimed before disk cleanup.
             with state_lock:
@@ -617,13 +771,15 @@ def run_full_translation(job_id, replay=False, repair=False, missing_only=False,
         job.update(status="failed", message=f"全文处理未完成：{str(exc)[:180]}")
         save_job(job)
     finally:
+        if watchdog:
+            watchdog.stop()
         with state_lock:
             finish_timing(job, started)
             active_operations.discard(job_id)
             save_job(job)
 
 
-def run_translation(job_id, settings, run_token=None):
+def run_translation(job_id, settings, run_token=None, api_key=None):
     job = get_job(job_id)
     with state_lock:
         if run_token and job.get("run_token") != run_token:
@@ -632,16 +788,18 @@ def run_translation(job_id, settings, run_token=None):
             job.update(status="cancelled", message="已停止排队任务，已有译文保留")
             save_job(job)
             return
-        job.update(status="running", message="正在准备本地翻译资源")
+        job.update(status="running", message="正在准备 API 翻译与本地排版资源" if settings.get("provider", "local") != "local" else "正在准备本地翻译资源")
         save_job(job)
     if settings.get("engine") == "full":
-        return run_full_translation(job_id, run_token=run_token)
+        return run_full_translation(job_id, run_token=run_token, api_key=api_key)
     job = get_job(job_id)
     with state_lock:
         active_operations.add(job_id)
         started = start_timing(job, "translation")
         save_job(job)
     try:
+        require_local(settings.get("profile", "standard"), settings, windows=WINDOWS, check_available=True)
+        translator.configure_runtime(settings)
         glossary = active_document_terms(job, terms_for(settings["domain"], settings["glossary"]))
         selected = parse_pages(settings["pages"], job["page_count"])
         eligible = [s for s in job["segments"] if s["status"] != "preserved" and s["page"] in selected]
@@ -676,6 +834,8 @@ def run_translation(job_id, settings, run_token=None):
             job["message"] = completion_message(reviews)
         save_job(job)
     except Exception as exc:
+        if isinstance(exc, LocalRuntimeError):
+            job["failure"] = exc.public()
         job["status"] = "failed"
         job["message"] = f"运行失败（{type(exc).__name__}）：{str(exc)[:220]}。已完成段落保存在本机。"
         save_job(job)
@@ -692,7 +852,19 @@ def run_translation(job_id, settings, run_token=None):
 @app.post("/api/documents/{job_id}/translate")
 def start_translation(job_id: str, settings: Settings):
     job = get_job(job_id)
-    if settings.profile == "standard" and not translator.installed():
+    if settings.provider not in {"local", "deepseek", "api"}:
+        raise HTTPException(400, "未知的翻译服务")
+    if settings.provider != "local" and settings.engine != "full":
+        raise HTTPException(400, "API 翻译请使用全文段落模式")
+    if settings.provider == "deepseek" and settings.api_model not in MODELS:
+        raise HTTPException(400, "未知的 DeepSeek 模型")
+    api_key = credentials.get() if settings.provider == "deepseek" else None
+    config = None
+    if settings.provider == "api":
+        config, api_key = profile_action(lambda: api_profiles.resolve(settings.api_profile_id))
+    if settings.provider == "deepseek" and not api_key:
+        raise HTTPException(409, "请先在翻译服务中填写 DeepSeek API Key")
+    if settings.provider == "local" and settings.profile == "standard" and not translator.installed():
         raise HTTPException(409, "请先安装本地模型")
     if settings.domain not in DOMAINS:
         raise HTTPException(400, "未知学科")
@@ -702,8 +874,9 @@ def start_translation(job_id: str, settings: Settings):
         raise HTTPException(400, "保守替换模式请配合标准模型；精译模型用于全文段落模式")
     if settings.engine == "full" and not layout_ready():
         raise HTTPException(409, "请先准备全文排版资源")
-    if settings.profile == "precision" and not precision_installed():
+    if settings.provider == "local" and settings.profile == "precision" and not precision_installed():
         raise HTTPException(409, "精译模型正在准备，请下载完成后使用，或选择标准模型")
+    assessment = local_preflight(settings.model_dump())
     try:
         terms_for(settings.domain, settings.glossary)
         selected = parse_pages(settings.pages, job["page_count"])
@@ -715,6 +888,13 @@ def start_translation(job_id: str, settings: Settings):
         if job["status"] in {"running", "queued", "exporting"}:
             raise HTTPException(409, "本篇论文正在处理")
         proposed = settings.model_dump()
+        if config:
+            # Freeze the non-secret configuration for this task. A queued task
+            # cannot change destinations when a saved profile is later edited.
+            proposed["api_config"] = config
+            proposed["api_model"] = config["model"]
+        if settings.provider == "local":
+            proposed["api_profile_id"] = ""
         changing_engine = job["settings"] and job["settings"].get("engine") != proposed["engine"]
         if changing_engine and any(seg["status"] == "edited" for seg in job["segments"]):
             raise HTTPException(409, "本篇已有手动校订，切换处理方式会改变段落划分。请沿用原方式，或重新导入原稿创建另一份任务")
@@ -723,8 +903,17 @@ def start_translation(job_id: str, settings: Settings):
             raise HTTPException(409, "所选范围未包含已校订的第 " + "、".join(map(str, omitted_edits)) + " 页。请将这些页加入范围，或重新导入原稿另建任务，以保留现有校订")
         if job.get("has_output"):
             job["translation_baseline"] = archive_translation(job)
-        old_translation_settings = {k:v for k,v in job["settings"].items() if k != "auto_cleanup"}
-        new_translation_settings = {k:v for k,v in proposed.items() if k != "auto_cleanup"}
+        def comparable(value):
+            normalized = {"provider": "local", "api_model": DEFAULT_MODEL, **value}
+            # Provider fields newly introduced in this version must not erase
+            # existing local translations when only storage preferences change.
+            if normalized["provider"] == "local":
+                normalized.pop("api_model", None)
+                normalized.pop("api_profile_id", None)
+                normalized.pop("api_config", None)
+            return {k: v for k, v in normalized.items() if k not in {"auto_cleanup", "allow_slow_cpu", "force_cpu"}}
+        old_translation_settings = comparable(job["settings"])
+        new_translation_settings = comparable(proposed)
         if job["settings"] and old_translation_settings != new_translation_settings:
             if changing_engine:
                 job.update(analyze(DATA / job_id / "original.pdf"))
@@ -732,12 +921,19 @@ def start_translation(job_id: str, settings: Settings):
             for seg in job["segments"]:
                 if seg["status"] not in {"preserved", "edited"}:
                     seg.update(translation="", status="pending", reason="", notes=[], exported=False)
-        job.update(settings=proposed, status="queued", progress=0, message="等待本地模型处理", cancel_requested=False, run_token=uuid.uuid4().hex)
+        job.update(settings=proposed, status="queued", progress=0, message="等待 API 翻译" if settings.provider != "local" else "等待本地模型处理", cancel_requested=False, run_token=uuid.uuid4().hex)
+        job.pop("failure", None)
+        job.pop("local_runtime", None)
+        if assessment:
+            job["hardware_assessment"] = assessment
         job["timing"] = {"kind": "translation"}
         job.pop("cleanup_report", None)
         (DATA / job_id / "cancel.request").unlink(missing_ok=True)
         save_job(job)
-        executor.submit(run_translation, job_id, proposed, job["run_token"])
+        if api_key:
+            executor.submit(run_translation, job_id, proposed, job["run_token"], api_key=api_key)
+        else:
+            executor.submit(run_translation, job_id, proposed, job["run_token"])
     return job_summary(job)
 
 
@@ -754,10 +950,20 @@ def archive_translation(job):
 
 
 @app.post("/api/documents/{job_id}/repair")
-def repair_translation(job_id: str, missing_only: bool = False):
+def repair_translation(job_id: str, missing_only: bool = False, allow_slow_cpu: bool = False, force_cpu: bool = False):
     """Retry incomplete/flagged prose; keep exact unflagged prior translations."""
     import shutil
     job = get_job(job_id)
+    repair_settings = {**job.get("settings", {})}
+    if allow_slow_cpu: repair_settings["allow_slow_cpu"] = True
+    if force_cpu: repair_settings["force_cpu"] = True
+    assessment = local_preflight(repair_settings)
+    api_key = credentials.get() if job.get("settings", {}).get("provider") == "deepseek" else None
+    if job.get("settings", {}).get("provider") == "api":
+        saved = job["settings"]
+        _, api_key = profile_action(lambda: api_profiles.resolve(saved.get("api_profile_id", ""), saved.get("api_config")))
+    if job.get("settings", {}).get("provider") == "deepseek" and not api_key:
+        raise HTTPException(409, "请先在翻译服务中填写 DeepSeek API Key，再继续本篇翻译")
     with state_lock:
         if job["status"] in {"running", "queued", "exporting"}:
             raise HTTPException(409, "本篇论文正在处理")
@@ -765,15 +971,20 @@ def repair_translation(job_id: str, missing_only: bool = False):
             raise HTTPException(400, "请先完成一次全文段落翻译")
         folder = DATA / job_id
         job["repair_baseline"] = archive_translation(job)
+        job["settings"] = repair_settings
         job.update(status="queued", progress=0, message="等待复核疑点并重试未完成段落", cancel_requested=False, run_token=uuid.uuid4().hex)
         job["timing"] = {"kind": "repair"}
+        job.pop("failure", None)
+        job.pop("local_runtime", None)
+        if assessment: job["hardware_assessment"] = assessment
         job.pop("cleanup_report", None)
         (folder / "cancel.request").unlink(missing_ok=True)
         save_job(job)
+        provider_arguments = {"api_key": api_key} if api_key else {}
         if missing_only:
-            executor.submit(run_full_translation, job_id, repair=True, missing_only=True, run_token=job["run_token"])
+            executor.submit(run_full_translation, job_id, repair=True, missing_only=True, run_token=job["run_token"], **provider_arguments)
         else:
-            executor.submit(run_full_translation, job_id, repair=True, run_token=job["run_token"])
+            executor.submit(run_full_translation, job_id, repair=True, run_token=job["run_token"], **provider_arguments)
     return job_summary(job)
 
 
