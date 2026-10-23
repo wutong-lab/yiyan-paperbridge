@@ -2,7 +2,7 @@
 
 译研把 SCI 英文论文翻译成专业中文，支持原文／译文左右对照、同步翻阅、专业词表与 PDF 导出。下载一个 **Windows 一键安装器**，选择 **4B 标准版**或 **14B 精译版**，向导自动下载、校验并安装完整环境。安装后导入论文即可离线翻译。
 
-**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [返回软件首页](../README.md)
+**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [返回软件首页](../README.md)
 
 ![Windows 论文工作室](images/windows-workspace.png)
 
@@ -10,9 +10,9 @@
 
 新版在顶部菜单提供 **软件 → 检查更新**。确认后打开更新向导，点击“检查并更新应用”；完成后继续离线翻译。普通更新只下载应用包，原来的 4B / 14B 模型、论文、译稿、术语和设置继续保留，也复用已有运行环境。
 
-从旧版首次升级，重新下载上面的一键安装器，选择原来的模型和安装位置。检测到完整模型后直接更新应用，无需重新下载模型。默认安装位置也可以使用 [单独更新工具](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-windows-update/Yiyan-Updater.exe)。
+从旧版首次升级，重新下载上面的一键安装器，选择原来的模型和安装位置。检测到完整模型后直接更新应用，无需重新下载模型。默认安装位置也可以使用 [单独更新工具](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-windows-update/Yiyan-Updater.exe)。
 
-后续版本与接口维护见 [Windows 更新发布说明](WINDOWS_RELEASE_MAINTENANCE.md)。
+更新前先完成论文处理与批注保存。后续版本与接口维护见 [Windows 更新发布说明](WINDOWS_RELEASE_MAINTENANCE.md)。
 
 ![Windows 应用更新向导：保留本地模型](images/windows-update.png)
 
@@ -71,10 +71,11 @@ NVIDIA 加速组件使用 CUDA 12.4，建议安装 **551.61 或更新版本的 N
 ## 4. 翻译论文并切换模型
 
 1. 点击 **选择论文 PDF** 或拖入英文论文；可以一次放入多篇。
-2. 展开 **翻译设置 → 更多设置 → 本地模型**，选择 **标准 · 4B** 或 **精译 · 14B**。
+2. 展开 **翻译设置 → 模型与更多设置 → 本地模型**，选择 **标准 · 4B** 或 **精译 · 14B**。
 3. 选择学科、翻译页码、术语及译后复核设置，点击 **开始翻译**。
-4. 完成后在左右两栏对照阅读，同步滚动并独立或联动放大。
-5. 在 **导出** 中选择中文 PDF、原译交替双语 PDF 或完整译文记录。
+4. 完成后点击 **全屏对照**（快捷键 F），同步翻页和滚动，左右可独立或联动缩放；按 Esc 退出。
+5. 选择 **高亮** 或 **下划线**，用预设颜色或 **自选颜色** 在任意一侧拖过文字；批注自动保存。切换到“浏览”后点击批注可删除。
+6. 在 **导出** 中选择中文 PDF、原译交替双语 PDF 或完整译文记录。带批注的原文和译文从批注工具栏分别导出。
 
 适用正文可以选择、复制的英文 PDF；单篇 80MB 以内、300 页以内。4B 与 14B 按论文任务选择，依次处理队列；切换时会释放上一任务的模型资源。
 
@@ -110,4 +111,4 @@ Windows 版使用 Qwen 官方 [Qwen3-4B-GGUF](https://huggingface.co/Qwen/Qwen3-
 
 ## 表格文字翻译
 
-在论文的 **翻译设置 → 更多设置** 中找到 **翻译表格文字**。默认关闭，表内原文与数值保持原貌；需要中文表头或文字单元格时勾选后翻译。表题和表注继续翻译。批量任务沿用当前选择，已保存的任务会记住本篇设置。
+在论文的 **翻译设置 → 模型与更多设置** 中找到 **翻译表格文字**。默认关闭，表内原文与数值保持原貌；需要中文表头或文字单元格时勾选后翻译。表题和表注继续翻译。批量任务沿用当前选择，已保存的任务会记住本篇设置。

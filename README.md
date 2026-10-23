@@ -6,11 +6,13 @@
 
 Mac 与 Windows 都提供 **一键安装向导**：选择 4B 或 14B 后自动准备完整环境，装好即可离线翻译。Mac 与 Windows 后续更新都继续使用已安装模型，论文、译稿与设置也会保留。
 
-**[Mac 一键安装](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-macos/Yiyan-Mac-OneClick-Setup.dmg) · [Windows 一键安装](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[Mac 安装教程](docs/MAC_INSTALL.md) · [Windows 安装教程](docs/WINDOWS_INSTALL.md)** · **[使用方法](#开始阅读)**
+**[Mac 一键安装](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [Windows 一键安装](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[Mac 安装教程](docs/MAC_INSTALL.md) · [Windows 安装教程](docs/WINDOWS_INSTALL.md)** · **[使用方法](#开始阅读)**
 
-![译研 Mac 论文工作室](docs/images/workspace.jpg)
+![译研 1.16.0 Mac 工作台](docs/screenshots/mac-workbench-1.16.0.png)
 
 ## 1.16.0：更专注的对照阅读
+
+[查看 Mac / Windows 实际安装与翻译验证记录](docs/VALIDATION_1.16.0.md)
 
 工作台采用简洁的浅色界面，常用翻译和阅读操作集中显示，详细设置可按需展开。Mac 与 Windows 都支持全屏对照、左右独立缩放，以及原文和译文各自的高亮、下划线。
 
@@ -18,7 +20,7 @@ Mac 与 Windows 都提供 **一键安装向导**：选择 4B 或 14B 后自动�
 
 ### 表格、模型与 API
 
-在 **翻译设置 → 更多设置** 中选择是否翻译表格文字。默认保留表内原文、数值和排版；开启后翻译可识别的表格文字，表题和表注继续翻译。本地模型与 API、单篇与批量任务共用这一设置。
+在 **翻译设置 → 模型与更多设置** 中选择是否翻译表格文字。默认保留表内原文、数值和排版；开启后翻译可识别的表格文字，表题和表注继续翻译。本地模型与 API、单篇与批量任务共用这一设置。
 
 在工作室的 **API 配置** 中添加 DeepSeek、通义千问、硅基流动或自定义 OpenAI 兼容接口，填写密钥、地址和模型，点击 **保存并测试**。以后翻译时直接选择已保存的服务，也可以继续选择本地 4B / 14B。
 
@@ -36,7 +38,8 @@ Mac 使用系统钥匙串保存密钥，Windows 使用当前用户的 DPAPI 加�
 | 专业术语 | 提供通用科研、天文与物理、医学与生命科学、材料与化学、工程与计算机词表；支持自定义译名与本篇术语。 |
 | 表格翻译 | 默认保留表内原文，可按需开启表格文字翻译；表题、表注继续翻译。 |
 | 论文排版 | 在论文版面中呈现中文，保留页面尺寸、图片、表格线和公式组件的阅读结构。 |
-| 双栏阅读 | 左侧原文、右侧译文，同步翻页与滚动；两侧可以独立放大，也可以联动缩放。 |
+| 双栏阅读 | 全屏对照、同步翻页与滚动，左右独立或联动缩放。 |
+| 中英文批注 | 原文与译文均可高亮、划线，支持自由选色、自动保存及分别导出批注 PDF。 |
 | 批量处理 | 一次导入多篇 PDF，按队列依次翻译，每篇论文单独保存。 |
 | 阅读与校订 | 在版面对照和段落译文之间切换，修改中文后保存并更新 PDF。 |
 | 多种导出 | 导出中文 PDF、原译页交替的双语 PDF，以及完整译文与核对记录。 |
@@ -46,9 +49,11 @@ Mac 使用系统钥匙串保存密钥，Windows 使用当前用户的 DPAPI 加�
 
 ### 原文与译文，一起翻阅
 
-左右对照示例论文，图表、公式与文字处在熟悉的位置。开启专注阅读，把窗口空间留给论文。
+点击“全屏对照”，左右独立缩放；在任意一侧高亮或划线，可自由选色并导出批注 PDF。
 
-![原文与中文译文对照阅读](docs/images/bilingual-reader.jpg)
+![译研 1.16.0 Mac 全屏对照与中英文批注](docs/screenshots/mac-reader-fullscreen-1.16.0.png)
+
+截图为 Mac 版，使用合成阅读示例。
 
 ### 为你的学科，选择准确的词
 
@@ -64,7 +69,7 @@ Mac 使用系统钥匙串保存密钥，Windows 使用当前用户的 DPAPI 加�
 
 ## 安装到 Mac：选择模型，一键准备
 
-**[下载 Mac 一键安装器（约 1.3MB）](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [GitHub 原始下载](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-macos/Yiyan-Mac-OneClick-Setup.dmg) · [安装与更新教程](docs/MAC_INSTALL.md)
+**[下载 Mac 一键安装器](https://ghfast.top/https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-macos/Yiyan-Mac-OneClick-Setup.dmg)** · [GitHub 原始下载](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-macos/Yiyan-Mac-OneClick-Setup.dmg) · [安装与更新教程](docs/MAC_INSTALL.md)
 
 ![Mac 一键安装器：4B / 14B 自选](docs/images/macos-setup.png)
 
@@ -90,10 +95,10 @@ Mac 使用系统钥匙串保存密钥，Windows 使用当前用户的 DPAPI 加�
 ## 开始阅读
 
 1. **导入论文**：点击“选择论文 PDF”，或将一篇、多篇英文 PDF 拖入工作室。
-2. **选择设置**：选择论文领域、翻译页码、本地模型或已保存的 API 服务；在“更多设置”中设置译后复核和自动清理。
+2. **选择设置**：选择论文领域、翻译页码、本地模型或已保存的 API 服务；在“模型与更多设置”中设置译后复核和自动清理。
 3. **开始翻译**：点击“开始翻译”。批量导入后，点击“翻译待处理论文”。
 4. **对照阅读**：点击“全屏对照”（快捷键 F），左右可以分别缩放或联动缩放。按 Esc 退出全屏。在“段落译文”中可查看和修改中文。
-5. **添加批注**：选择高亮或下划线，选定颜色后在原文或译文上拖过文字；批注自动保存。点击已有批注可删除，批注工具栏可导出带批注的原文或译文。
+5. **添加批注**：选择高亮或下划线，选定颜色后在原文或译文上拖过文字；批注自动保存。切换到“浏览”后点击已有批注即可删除，批注工具栏可导出带批注的原文或译文。
 6. **保存译稿**：从“导出”菜单选择中文 PDF、双语 PDF 或完整译文与核对记录。
 
 专业译名可按下面的格式添加到术语表：
@@ -108,7 +113,7 @@ light curve = 光变曲线
 
 ![Windows 一键安装：选择 4B 或 14B](docs/images/windows-setup.png)
 
-**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.15.1-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [安装与使用教程](docs/WINDOWS_INSTALL.md)
+**[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v1.16.0-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · [安装与使用教程](docs/WINDOWS_INSTALL.md)
 
 1. 双击打开 **Yiyan-Windows-OneClick-Setup.exe**。
 2. 选择 **4B 标准版**或 **14B 精译版**，点击 **下载并安装**。
