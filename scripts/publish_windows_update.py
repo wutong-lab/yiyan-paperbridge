@@ -106,6 +106,12 @@ def promote():
         assert {case['case'] for case in tables['cases']}=={'off','on'}
         assert all(case['passed'] and case['status']=='complete' for case in tables['cases'])
         common.upload(r['id'],table_report)
+    if CONFIG.get('require_reader_validation'):
+        reader_report=ROOT/'validation/READER-INSTALLED-REPORT.json'
+        reader=json.loads(reader_report.read_text(encoding='utf-8-sig'))
+        assert reader['passed'] and reader['version']==VERSION and reader['actual_installed_runtime']
+        assert not reader['development_source_override'] and not reader['user_credential_used']
+        common.upload(r['id'],reader_report)
     for p in (evidence,ROOT/'validation/WINDOWS-OFFLINE-SMOKE-REPORT.json',api_report):common.upload(r['id'],p)
     endpoint=f'/repos/{common.REPO}/contents/release-assets/windows-update.json'
     try:old=common.api(endpoint+'?ref=main')

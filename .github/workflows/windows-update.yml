@@ -34,10 +34,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Downloader checks failed' }
           dotnet run --project desktop/windows-update-tests/Tests.csproj -c Release
           if ($LASTEXITCODE -ne 0) { throw 'Update checks failed' }
+      - name: Verify reader, annotation and workbench controls
+        run: node --test tests/annotations.test.cjs tests/fullscreen.test.cjs tests/reader.test.cjs tests/workbench.test.cjs tests/batch.test.cjs tests/ui.test.cjs
       - name: Build app-only package, self-contained updater and one-click setup
         run: |
-          python -m pip install PyMuPDF==1.27.2.3 numpy psutil==7.2.2 httpx==0.28.1 pytest
-          python -m pytest tests/test_quality_performance.py tests/test_reference_sections.py tests/test_table_policy.py tests/test_translation_quality_regressions.py tests/test_windows.py -q
+          python -m pip install PyMuPDF==1.27.2.3 numpy psutil==7.2.2 httpx==0.28.1 fastapi==0.142.2 requests==2.34.2 pytest
+          python -m pytest tests/test_quality_performance.py tests/test_reference_sections.py tests/test_table_policy.py tests/test_translation_quality_regressions.py tests/test_windows.py tests/test_annotations.py tests/test_reading_states.py tests/test_storage_cleanup.py -q
           if ($LASTEXITCODE -ne 0) { throw 'Image-heavy PDF verification regression checks failed' }
           python scripts/publish_windows_update.py build
       - name: Capture actual Windows selection screens
@@ -127,6 +129,12 @@ jobs:
           $v=(Get-Content release-assets/windows-version.json -Raw|ConvertFrom-Json).version
           & 'C:\PaperBridge升级验证\译研\Runtime\Python\python.exe' -X utf8 scripts/smoke_table_translation.py --bundle 'C:\PaperBridge升级验证\译研' --data C:\WindowsUpdateEvidence\Tables\Data --evidence C:\WindowsUpdateEvidence\Tables --version $v
           if($LASTEXITCODE -ne 0){throw 'Actual table translation switch checks failed'}
+      - name: Verify installed reader annotations and color PDF exports
+        shell: pwsh
+        run: |
+          $v=(Get-Content release-assets/windows-version.json -Raw|ConvertFrom-Json).version
+          python scripts/smoke_reader_installed.py --bundle 'C:\PaperBridge升级验证\译研' --data C:\WindowsUpdateEvidence\Reader\Data --evidence C:\WindowsUpdateEvidence\Reader --version $v
+          if($LASTEXITCODE -ne 0){throw 'Installed reader annotation validation failed'}
       - name: Verify installed DPAPI profiles, API protocol and hardware messages
         run: python scripts/smoke_windows_api.py --bundle 'C:\PaperBridge升级验证\译研' --data C:\WindowsUpdateEvidence\API
       - uses: actions/upload-artifact@v6
@@ -145,6 +153,9 @@ jobs:
             C:/WindowsUpdateEvidence/PDF/WINDOWS-OFFLINE-SMOKE-REPORT.json
             C:/WindowsUpdateEvidence/PDF/smoke.log
             C:/WindowsUpdateEvidence/API/WINDOWS-API-HARDWARE-REPORT.json
+            C:/WindowsUpdateEvidence/Reader/*.json
+            C:/WindowsUpdateEvidence/Reader/*.pdf
+            C:/WindowsUpdateEvidence/Reader/*.log
             C:/WindowsUpdateEvidence/Tables/TABLE-TRANSLATION-REPORT.json
             C:/WindowsUpdateEvidence/Tables/off/*.json
             C:/WindowsUpdateEvidence/Tables/on/*.json
@@ -171,7 +182,7 @@ jobs:
           from pathlib import Path
           import shutil
           root=Path('validation')
-          for name in ['WINDOWS-UPDATE-PRESERVATION.json','WINDOWS-OFFLINE-SMOKE-REPORT.json','WINDOWS-API-HARDWARE-REPORT.json','TABLE-TRANSLATION-REPORT.json']:
+          for name in ['WINDOWS-UPDATE-PRESERVATION.json','WINDOWS-OFFLINE-SMOKE-REPORT.json','WINDOWS-API-HARDWARE-REPORT.json','TABLE-TRANSLATION-REPORT.json','READER-INSTALLED-REPORT.json']:
               source=next(root.rglob(name));target=root/name
               if source!=target: shutil.copy2(source,target)
           PY

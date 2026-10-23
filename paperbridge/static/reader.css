@@ -50,3 +50,20 @@
 @media(max-width:800px){.column-label{min-height:90px}.pane-zoom{width:100%;margin-left:0}.batch-heading{gap:8px}}
 .file-dragging main::after{content:'松开即可导入多篇 PDF';position:fixed;inset:14px;z-index:80;display:grid;place-items:center;background:#f7faf0ec;border:2px dashed #8daa70;border-radius:15px;color:#426b37;font-size:24px;pointer-events:none}
 .paper-container img.preview-loading{opacity:0}
+
+/* Fill the viewport without allowing document controls to push the pages below it. */
+body.reader-focus{height:100dvh;overflow:hidden}
+body.reader-focus .reading-heading,body.reader-focus .runtime-notice{display:none!important}
+body.reader-focus main{height:100dvh;min-height:0;width:100%;margin:0;overflow:hidden}
+body.reader-focus .main-content{flex:1;max-width:none;padding:10px;overflow:hidden}
+body.reader-focus .document-heading{margin-bottom:8px;min-height:28px}
+body.reader-focus .document-heading h1{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.reader-focus .document-heading>div:not(.document-icon){min-width:0}
+body.reader-focus .document-actions{display:none}
+body.reader-focus .reader{flex:1;overflow:hidden}
+body.reader-focus .reader-toolbar{padding:7px 12px}
+body.reader-focus .column-label{min-height:49px;padding:7px 12px}
+body.reader-focus .column-label small{display:none}
+body.reader-focus .pdf-scroll{height:0;min-height:0;flex:1}
+body.reader-focus .text-comparison{flex:1}
+@media(max-width:800px){body.reader-focus .column-label{min-height:69px}body.reader-focus .main-content{padding:6px}}

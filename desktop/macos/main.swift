@@ -174,6 +174,12 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
         window.center()
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        // Use WebKit's native Fullscreen API so Escape and fullscreenchange
+        // behave the same as in a browser. The view uses autoresizing (above),
+        // so WebKit can temporarily move it into its fullscreen window.
+        if #available(macOS 12.3, *) {
+            configuration.preferences.isElementFullscreenEnabled = true
+        }
         configuration.applicationNameForUserAgent = "PaperBridgeDesktop/" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.0")
         web = WKWebView(frame: window.contentView!.bounds, configuration: configuration)
         web.autoresizingMask = [.width, .height]
@@ -335,10 +341,15 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
             catch { startupError("准备本地工作室失败：\(error.localizedDescription)") }
         } else if validProject(root) { start() } else { chooseProject() }
     }
-    func showWindow() { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    func showWindow() {
+        // WebKit moves the web view into another NSWindow for element
+        // fullscreen. Activating the original window would exit fullscreen.
+        (web?.window ?? window)?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderOut(nil); return false }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return false }
 
     func chooseProject() {
         let panel = NSOpenPanel()
@@ -516,7 +527,7 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
 
     @objc func openPDF() {
         let panel = pdfPanel()
-        panel.beginSheetModal(for: window) { result in
+        panel.beginSheetModal(for: web.window ?? window) { result in
             if result == .OK { self.pendingFiles.append(contentsOf: panel.urls); self.importNext() }
         }
     }
@@ -529,7 +540,7 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
     }
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
         let panel = pdfPanel(); panel.allowsMultipleSelection = parameters.allowsMultipleSelection
-        panel.beginSheetModal(for: window) { result in completionHandler(result == .OK ? panel.urls : nil) }
+        panel.beginSheetModal(for: webView.window ?? window) { result in completionHandler(result == .OK ? panel.urls : nil) }
     }
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
         pendingFiles.append(contentsOf: filenames.map { URL(fileURLWithPath: $0) })
@@ -578,7 +589,7 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
         panel.nameFieldStringValue = URL(fileURLWithPath: suggestedFilename).lastPathComponent
         panel.canCreateDirectories = true
         if panel.nameFieldStringValue.lowercased().hasSuffix(".pdf") { panel.allowedContentTypes = [.pdf] }
-        panel.beginSheetModal(for: window) { result in
+        panel.beginSheetModal(for: web.window ?? window) { result in
             guard result == .OK, let final = panel.url else { self.activeDownloads.remove(ObjectIdentifier(download)); completionHandler(nil); return }
             let temporary = final.deletingLastPathComponent().appendingPathComponent(".paperbridge-\(UUID().uuidString).download")
             self.downloads[ObjectIdentifier(download)] = (temporary, final)
@@ -622,12 +633,12 @@ final class PaperBridgeApp: NSObject, NSApplicationDelegate, NSWindowDelegate, W
             self.checkingQuit = false
             if info?["busy"] as? Bool == true || (info == nil && self.backend?.isRunning == true) {
                 self.showWindow()
-                self.alert("当前任务还在运行", "请等待翻译或模型准备完成。若想中止翻译，请先在页面中点击“停止翻译”，等保存后再退出。关闭窗口可以让任务继续在后台运行。")
+                self.alert("当前任务还在运行", "请等待翻译、文件处理或批注保存完成后再退出。若想中止翻译，请先在页面中点击“停止翻译”，等保存后再退出。关闭窗口可以让任务继续在后台运行。")
                 self.checkingQuit = false
             } else {
                 self.web.evaluateJavaScript("typeof desktopBusy === 'function' && desktopBusy()") { value, error in
                     if value as? Bool == true {
-                        self.showWindow(); self.alert("正在处理文件", "请等待当前导入、批量提交或清理完成后再退出。")
+                        self.showWindow(); self.alert("正在保存或处理文件", "请等待文件处理、批注保存或清理完成后再退出。")
                         self.checkingQuit = false
                     } else { self.checkingQuit = false; self.quitting = true; NSApp.terminate(nil) }
                 }

@@ -29,3 +29,4 @@ settings/
 **/.api-secrets/
 *.key
 *.pem
+.qa/

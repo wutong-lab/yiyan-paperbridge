@@ -76,7 +76,7 @@ def build_app():
         python=app/'Contents/Resources/Python/bin/python3.12'
         subprocess.run([str(python),'-X','utf8','-c','import fastapi,uvicorn,pymupdf,psutil,onnxruntime,babeldoc,fontTools; print("Bundled PDF/UI imports passed")'],check=True,env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'},cwd='/tmp')
     package.VERSION=VERSION;package.smoke_test=portable_cpu_smoke
-    package.SCRIPTS.extend(['publish_offline_ci.py','publish_macos_oneclick.py','build_macos_installer.py','test_macos_installer.py'])
+    package.SCRIPTS.extend(['publish_offline_ci.py','publish_macos_oneclick.py','build_macos_installer.py','test_macos_installer.py','smoke_reader_installed.py','smoke_table_translation.py'])
     sys.argv=['package_macos.py','--no-dmg','--python-runtime',str(ROOT/'.cache/python')]
     package.main()
     resources=APP/'Contents/Resources';layout=resources/'LayoutAssets'
@@ -155,6 +155,10 @@ def promote_app():
         assert validation['native_version']==VERSION and not validation['user_credential_used']
         assert {case['case'] for case in validation['cases']}=={'off','on'}
         assert all(case['passed'] and case['status']=='complete' for case in validation['cases'])
+        if CONFIG.get('require_reader_validation'):
+            assert validation['reader_validation']['passed']
+            assert validation['reader_validation']['version']==VERSION
+            assert validation['reader_validation']['installed_engine_verified']
         common.upload(target['id'],validation_path)
     assert build['first_launch_passed'] and build['models_outside_application'] and not build['application_has_models']
     assert launch['loaded'] and launch['status']['layout_installed']

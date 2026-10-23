@@ -69,18 +69,29 @@ function refreshPreview() {
   $(id).addEventListener('error', () => { $(id).classList.remove('preview-loading'); $(id).setAttribute('aria-busy','false'); status.hidden = false; status.classList.add('error'); message.textContent = '这一页暂时未能加载'; retry.hidden = false; });
 });
 reader.onZoom = refreshPreview;
-function focusReader(enabled) {
-  document.body.classList.toggle('reader-focus', enabled);
-  $('readerFocus').textContent = enabled ? '退出专注' : '专注阅读';
-  $('readerFocus').setAttribute('aria-pressed', String(enabled));
-  if (enabled) { selectTab('pdf'); window.scrollTo(0, 0); }
-  reader.resize(); refreshPreview();
-}
-$('readerFocus').addEventListener('click', () => focusReader(!document.body.classList.contains('reader-focus')));
+const annotations = new PaperAnnotations.Controller({
+  toolbar: $('annotationToolbar'),
+  panes: [
+    {version: 'original', container: $('originalPaper'), image: $('originalPreview')},
+    {version: 'translated', container: $('translatedContainer'), image: $('translatedPreview')}
+  ], onMessage: toast, onRefresh: refreshPreview
+});
+const fullscreenReader = new PaperFullscreen.ReaderFullscreen({
+  document, button: $('readerFocus'), onMessage: toast,
+  onChange(enabled) {
+    if (enabled) selectTab('pdf');
+    requestAnimationFrame(() => { reader.resize(); refreshPreview(); });
+  }
+});
+function focusReader(enabled) { return fullscreenReader.set(enabled); }
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !document.querySelector('.modal-backdrop:not([hidden])')) focusReader(false);
+  if (event.key === 'Escape' && !document.querySelector('.modal-backdrop:not([hidden])')) {
+    annotations.cancelSelection();
+    if (fullscreenReader.active) focusReader(false);
+  }
   if (!job || activeTab !== 'pdf' || document.querySelector('.modal-backdrop:not([hidden])')) return;
   if (event.altKey || event.ctrlKey || event.metaKey || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName) || event.target.isContentEditable) return;
+  if (event.key.toLowerCase() === 'f' && !event.repeat) { event.preventDefault(); fullscreenReader.toggle(); }
   if (event.key === 'ArrowLeft' && page > 1) { event.preventDefault(); page--; updatePage(); }
   if (event.key === 'ArrowRight' && page < job.page_count) { event.preventDefault(); page++; updatePage(); }
 });
@@ -107,7 +118,10 @@ async function desktopImported(id) {
   await openJob(document, true);
   await recent();
 }
-function desktopBusy() { return importing || submittingBatch || resourceCleaning || cleanupSaving; }
+function desktopBusy() { return importing || submittingBatch || resourceCleaning || cleanupSaving || annotations.isBusy(); }
+window.addEventListener('beforeunload', event => {
+  if (annotations.isBusy()) { event.preventDefault(); event.returnValue = ''; }
+});
 function busy() { return job && ['queued', 'running', 'exporting'].includes(job.status); }
 const modalFocus = new Map();
 function showModal(id) {
@@ -524,7 +538,7 @@ async function submitBatch(settings) {
 $('startBatch').addEventListener('click',() => withLocalHardware(translationSettings(),submitBatch).catch(error => toast(error.message)));
 $('clearBatch').addEventListener('click', () => { batch.clear(); renderBatch(); toast('列表已收起，论文与翻译任务仍保留在最近的论文中'); });
 $('tryDemo').addEventListener('click', async () => { $('tryDemo').disabled = true; try { await openJob(await api('/api/demo', {method:'POST'})); await recent(); } catch(error) { toast(error.message); } finally { $('tryDemo').disabled = false; } });
-$('newPaper').addEventListener('click', () => { viewRevision++; openingRequest++; closeModal('documentTermsModal'); focusReader(false); setSidebar(false); job = null; drawRecent(); renderBatch(); $('welcome').hidden = false; $('workspace').hidden = true; history.replaceState(null, '', '/'); });
+$('newPaper').addEventListener('click', () => { viewRevision++; openingRequest++; closeModal('documentTermsModal'); focusReader(false); setSidebar(false); annotations.setPage(null, 1, false); annotations.setVisible(false); job = null; drawRecent(); renderBatch(); $('welcome').hidden = false; $('workspace').hidden = true; history.replaceState(null, '', '/'); });
 async function recent() {
   try { recentDocuments = await api('/api/documents'); drawRecent(); return true; } catch(error) { toast(error.message); return false; }
 }
@@ -661,6 +675,8 @@ async function updatePage() {
   const image = $('translatedPreview'), empty = $('translatedContainer').querySelector('.translation-empty');
   image.hidden = !job.has_output; empty.hidden = job.has_output;
   if(!job.has_output) image.parentElement.querySelector('.preview-status').hidden = true;
+  annotations.setVisible(activeTab === 'pdf');
+  annotations.setPage(job.id, page, job.has_output, JSON.stringify([job.has_output, job.output_revision, job.status]));
   refreshPreview();
   if(activeTab === 'text') await updateSegments();
 }
@@ -675,7 +691,7 @@ $('pageJump').addEventListener('change', jumpToPage);
 $('pageJump').addEventListener('keydown', event => {
   if (event.key === 'Enter') { event.preventDefault(); jumpToPage(); }
 });
-async function selectTab(tab, reload = true) { activeTab = tab; $('pdfView').hidden = tab !== 'pdf'; $('readingControls').hidden = tab !== 'pdf'; $('textView').hidden = tab !== 'text'; $('pdfTab').classList.toggle('selected',tab === 'pdf'); $('textTab').classList.toggle('selected',tab === 'text'); $('pdfTab').setAttribute('aria-selected',String(tab === 'pdf')); $('textTab').setAttribute('aria-selected',String(tab === 'text')); if(tab === 'text' && reload) await updateSegments(); else reader.resize(); }
+async function selectTab(tab, reload = true) { activeTab = tab; annotations.setVisible(tab === 'pdf'); $('pdfView').hidden = tab !== 'pdf'; $('readingControls').hidden = tab !== 'pdf'; $('textView').hidden = tab !== 'text'; $('pdfTab').classList.toggle('selected',tab === 'pdf'); $('textTab').classList.toggle('selected',tab === 'text'); $('pdfTab').setAttribute('aria-selected',String(tab === 'pdf')); $('textTab').setAttribute('aria-selected',String(tab === 'text')); if(tab === 'text' && reload) await updateSegments(); else reader.resize(); }
 $('pdfTab').addEventListener('click', () => selectTab('pdf')); $('textTab').addEventListener('click', () => selectTab('text'));
 const segmentStatuses = {pending:'待翻译',translated:'译文已生成',review:'有检查提示',failed:'未译成功 · 保留英文',preserved:'保留原文',edited:'已手动修改'};
 async function updateSegments() {

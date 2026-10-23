@@ -1,6 +1,7 @@
 {
-  "version": "1.15.1",
+  "version": "1.16.0",
   "minimum_installed_version": "1.5.0",
   "include_runtime": false,
-  "require_table_translation_validation": true
+  "require_table_translation_validation": true,
+  "require_reader_validation": true
 }

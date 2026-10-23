@@ -34,6 +34,11 @@ internal sealed class PaperWindow : Form
     string stateFile = "";
     string origin = "";
     bool closing;
+    bool readerFullscreen;
+    Rectangle windowedBounds;
+    FormWindowState windowedState;
+    FormBorderStyle windowedBorder;
+    bool windowedMenuVisible;
 
     public PaperWindow(bool smokeTest,bool updateTest=false)
     {
@@ -59,7 +64,9 @@ internal sealed class PaperWindow : Form
             bool busy = false;
             try { var s = JsonDocument.Parse(await http.GetStringAsync(origin + "/api/desktop/status")); busy = s.RootElement.GetProperty("busy").GetBoolean(); }
             catch { }
-            if (busy && MessageBox.Show("论文正在处理，退出会停止当前任务，已完成的内容会保留。现在退出吗？", "退出译研", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            try { if (view.CoreWebView2 != null) busy |= await view.CoreWebView2.ExecuteScriptAsync("typeof desktopBusy === 'function' && desktopBusy()") == "true"; }
+            catch { }
+            if (busy && MessageBox.Show("论文或批注正在处理中，退出可能中断当前保存。建议等待完成后退出。仍要退出吗？", "退出译研", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
             closing = true; StopServer(); Close();
         };
         FormClosed += (_, _) => { StopServer(); http.Dispose(); };
@@ -127,6 +134,10 @@ internal sealed class PaperWindow : Form
             await view.EnsureCoreWebView2Async(environment);
             view.CoreWebView2.Settings.UserAgent += " PaperBridgeDesktop/"+AppVersion+" Windows";
             view.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            // The HTML Fullscreen API fills the WebView; the host must also
+            // cover its display. WebView2 handles Escape and reports exit here.
+            view.CoreWebView2.ContainsFullScreenElementChanged += (_, _) =>
+                SetReaderFullscreen(view.CoreWebView2.ContainsFullScreenElement);
             view.CoreWebView2.NavigationStarting += (_, e) => {
                 if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) && uri.GetLeftPart(UriPartial.Authority) == origin) return;
                 e.Cancel = true;
@@ -182,6 +193,37 @@ internal sealed class PaperWindow : Form
         }
     }
 
+    void SetReaderFullscreen(bool enabled)
+    {
+        if (readerFullscreen == enabled || IsDisposed) return;
+        readerFullscreen = enabled;
+        SuspendLayout();
+        try
+        {
+            if (enabled)
+            {
+                var display = Screen.FromControl(this).Bounds;
+                windowedState = WindowState;
+                windowedBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+                windowedBorder = FormBorderStyle;
+                windowedMenuVisible = MainMenuStrip?.Visible ?? false;
+                WindowState = FormWindowState.Normal;
+                if (MainMenuStrip != null) MainMenuStrip.Visible = false;
+                FormBorderStyle = FormBorderStyle.None;
+                Bounds = display;
+            }
+            else
+            {
+                WindowState = FormWindowState.Normal;
+                FormBorderStyle = windowedBorder;
+                Bounds = windowedBounds;
+                if (MainMenuStrip != null) MainMenuStrip.Visible = windowedMenuVisible;
+                WindowState = windowedState;
+            }
+        }
+        finally { ResumeLayout(true); }
+    }
+
     void StopServer()
     {
         try { if (server is { HasExited: false }) { server.Kill(entireProcessTree: true); server.WaitForExit(5000); } }
@@ -200,6 +242,12 @@ internal sealed class PaperWindow : Form
             using var network=UpdateNetwork.Client();var release=await UpdateNetwork.Latest(network,testManifest:updateSmoke?Environment.GetEnvironmentVariable("PAPERBRIDGE_WINDOWS_TEST_MANIFEST"):null);
             if(!release.NewerThan(AppVersion)){if(!updateSmoke)MessageBox.Show("译研 "+AppVersion+" 已是最新版本。","检查更新");else throw new IOException("Update smoke needs a newer published version");return;}
             if(!updateSmoke&&MessageBox.Show("发现译研 "+release.Version+"。\n\n本次只下载应用更新，保留已有 4B / 14B 模型、论文、译稿与设置。","软件更新",MessageBoxButtons.OKCancel,MessageBoxIcon.Information)!=DialogResult.OK)return;
+            // Version lookup and the confirmation dialog can outlive a new
+            // translation or annotation save. Recheck both sides immediately
+            // before launching the helper, since update shutdown skips FormClosing.
+            using var latestState=JsonDocument.Parse(await http.GetStringAsync(origin+"/api/desktop/status"));
+            bool pendingFrontend=view.CoreWebView2 != null && await view.CoreWebView2.ExecuteScriptAsync("typeof desktopBusy === 'function' && desktopBusy()") == "true";
+            if(latestState.RootElement.GetProperty("busy").GetBoolean() || pendingFrontend){MessageBox.Show("请等待论文处理或批注保存完成；未保存的批注请先重试保存或删除，然后再更新。","当前内容尚未处理完成");return;}
             string helper=Path.Combine(data,"Updater",Guid.NewGuid().ToString("N"),"Yiyan-Updater.exe");Directory.CreateDirectory(Path.GetDirectoryName(helper)!);
             File.Copy(Path.Combine(AppContext.BaseDirectory,"Updater","Yiyan-Updater.exe"),helper);
             var start=new ProcessStartInfo(helper){UseShellExecute=false};

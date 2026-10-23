@@ -1,5 +1,7 @@
 # 译研 · Windows 一键安装与应用更新
 
+新版提供简洁工作台、全屏中英对照、各自缩放、彩色高亮与下划线、自由选色盘及带批注 PDF 导出。
+
 **[下载 Windows 一键安装器](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v{VERSION}-windows-update/Yiyan-Windows-OneClick-Setup.exe)** · **[已有译研，下载更新工具](https://github.com/wutong-lab/yiyan-paperbridge/releases/download/v{VERSION}-windows-update/Yiyan-Updater.exe)**
 
 1.15.1 在 **翻译设置 → 更多设置** 中新增 **翻译表格文字**，默认关闭。表内原文、数值和排版保留；开启后翻译可识别的表内文字，表题和表注继续翻译。本地与 API、单篇与批量任务使用同一规则，切换时保留已保存的手动表格译文。

@@ -172,3 +172,24 @@ def test_windows_translator_shares_scientific_validation_and_releases_process(mo
     assert local._generate([{"role":"user", "content":"Supernova light curves"}], 100) == "超新星光变曲线"
     local.unload()
     assert local.model is None and local.inference.process is None
+
+
+def test_native_update_rechecks_backend_and_unsaved_frontend_before_shutdown():
+    """Source contract for the Windows-only host; native execution remains in CI.
+
+    The initial busy probe is insufficient: a translation or note can start while
+    the release lookup or confirmation is pending. The second guard must precede
+    helper launch and the shutdown that intentionally skips FormClosing.
+    """
+    source = (Path(__file__).resolve().parents[1] / "desktop/windows/Program.cs").read_text()
+    update = source.split("async Task CheckUpdate()", 1)[1]
+    confirmation = update.index("DialogResult.OK)return;")
+    latest_probe = update.index("using var latestState=JsonDocument.Parse")
+    frontend_probe = update.index("bool pendingFrontend=")
+    guard = update.index('if(latestState.RootElement.GetProperty("busy").GetBoolean() || pendingFrontend)')
+    helper_launch = update.index("Process.Start(start)")
+    shutdown = update.index("closing=true;StopServer();Close();")
+    assert confirmation < latest_probe < frontend_probe < guard < helper_launch < shutdown
+    assert 'http.GetStringAsync(origin+"/api/desktop/status")' in update[latest_probe:frontend_probe]
+    assert "desktopBusy()" in update[frontend_probe:guard]
+    assert "return;}" in update[guard:helper_launch]

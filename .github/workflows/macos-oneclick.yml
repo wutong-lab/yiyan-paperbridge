@@ -54,8 +54,10 @@ jobs:
       - name: Verify native resumable downloader
         run: |
           .venv/bin/python -m pip install pytest
-          .venv/bin/python -m pytest tests/test_quality_performance.py tests/test_reference_sections.py tests/test_table_policy.py tests/test_translation_quality_regressions.py tests/test_windows.py -q
+          .venv/bin/python -m pytest tests/test_quality_performance.py tests/test_reference_sections.py tests/test_table_policy.py tests/test_translation_quality_regressions.py tests/test_windows.py tests/test_annotations.py tests/test_reading_states.py tests/test_storage_cleanup.py -q
           .venv/bin/python scripts/test_macos_installer.py
+      - name: Verify reader, annotation and workbench controls
+        run: node --test tests/annotations.test.cjs tests/fullscreen.test.cjs tests/reader.test.cjs tests/workbench.test.cjs tests/batch.test.cjs tests/ui.test.cjs
       - name: Build, verify first launch, capture real UI and upload model-free app
         env:
           GITHUB_TOKEN: ${{ github.token }}

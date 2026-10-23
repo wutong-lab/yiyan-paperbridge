@@ -8,9 +8,10 @@ import sys
 import threading
 import time
 import uuid
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from stat import S_ISREG
 from urllib.parse import unquote, urlparse
 
 from fastapi import FastAPI, HTTPException, Request
@@ -40,6 +41,8 @@ from .api_profiles import ProfileManager
 from .table_policy import apply_table_policy
 from .secret_store import SecretStoreError
 from .local_runtime import assess_local, require_local, LocalRuntimeError, RuntimeWatchdog, ADVICE
+from .annotations import (AnnotationCreate, AnnotationError, add_annotation, delete_annotation,
+                          list_annotations, page_words, export_annotations)
 
 api_profiles = ProfileManager(ROOT)
 
@@ -115,6 +118,16 @@ def get_job(job_id):
 
 def job_summary(job):
     result = {k: v for k, v in job.items() if k not in {"segments", "metadata"}}
+    # Rendering can change after a manual paragraph edit without a new translation
+    # timer. Let readers invalidate PDF and annotation caches on the actual file.
+    result["output_revision"] = ""
+    if job.get("has_output"):
+        try:
+            info = (DATA / job["id"] / "translated.pdf").stat()
+            if S_ISREG(info.st_mode):
+                result["output_revision"] = f"{info.st_mtime_ns}:{info.st_size}:{info.st_ino}"
+        except OSError:
+            pass
     result["translated"] = sum(bool(s["translation"]) for s in job["segments"])
     result["exported"] = sum(s.get("exported", False) for s in job["segments"])
     checked = reading_segments(job)
@@ -597,6 +610,80 @@ def preview(job_id: str, number: int, version: str = "original", width: int = 11
         return Response(render_page(file, number, width=width), media_type="image/png")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+def annotation_folder(job_id, version):
+    job = get_job(job_id)
+    if version not in {"original", "translated"}:
+        raise HTTPException(400, "未知批注版本")
+    folder = DATA / job_id
+    if not safe_path(DATA, folder / f"{version}.pdf"):
+        raise HTTPException(400, "PDF 文件路径无效")
+    if version == "translated":
+        if job["status"] in {"queued", "running", "exporting"}:
+            raise HTTPException(409, "译文正在更新，请完成后再添加或导出批注")
+        if not job.get("has_output"):
+            raise HTTPException(404, "译文 PDF 尚未生成")
+    return folder
+
+
+def annotation_result(operation, *args):
+    try:
+        return operation(*args)
+    except AnnotationError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(503, "批注读写失败，请检查磁盘空间后重试") from exc
+
+
+@contextmanager
+def annotation_operation(kind):
+    # The native Mac and Windows quit/update probes both read active_operations
+    # through /api/desktop/status. Register on the executing worker, and release
+    # only after disk work stops even when its HTTP client has disconnected.
+    operation = f"annotation-{kind}-{uuid.uuid4().hex}"
+    with state_lock:
+        active_operations.add(operation)
+    try:
+        yield
+    finally:
+        with state_lock:
+            active_operations.discard(operation)
+
+
+@app.get("/api/documents/{job_id}/annotations")
+def annotations(job_id: str, version: str = "original"):
+    return annotation_result(list_annotations, annotation_folder(job_id, version), version)
+
+
+@app.post("/api/documents/{job_id}/annotations", status_code=201)
+def create_annotation(job_id: str, annotation: AnnotationCreate):
+    with annotation_operation("save"):
+        return annotation_result(add_annotation, annotation_folder(job_id, annotation.version), annotation)
+
+
+@app.get("/api/documents/{job_id}/annotations/text")
+def annotation_text(job_id: str, page: int = 1, version: str = "original"):
+    return annotation_result(page_words, annotation_folder(job_id, version), version, page)
+
+
+@app.get("/api/documents/{job_id}/annotations/export")
+def annotation_export(job_id: str, version: str = "original", document_revision: str | None = None):
+    from urllib.parse import quote
+    with annotation_operation("export"):
+        folder = annotation_folder(job_id, version)
+        output = annotation_result(export_annotations, folder, version, document_revision)
+        label = "原文" if version == "original" else "中文"
+        filename = f"{Path(get_job(job_id)['name']).stem}_{label}_批注.pdf"
+        return Response(output, media_type="application/pdf", headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"})
+
+
+@app.delete("/api/documents/{job_id}/annotations/{annotation_id}")
+def remove_annotation(job_id: str, annotation_id: str, document_revision: str, version: str = "original"):
+    with annotation_operation("delete"):
+        return annotation_result(delete_annotation, annotation_folder(job_id, version), version,
+                                 annotation_id, document_revision)
 
 
 class Settings(BaseModel):
