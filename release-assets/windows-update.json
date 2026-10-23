@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "version": "1.15.1",
+  "version": "1.16.0",
   "platform": "windows-x64",
   "archive": {
-    "name": "Yiyan-1.15.1-Windows-x64-App.zip",
-    "bytes": 136227584,
-    "sha256": "fe9f16f11d06f99d39e78c80f463cf348685d16778f05a6f96d1316639d4ae15",
-    "url": "https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.15.1-windows-update/Yiyan-1.15.1-Windows-x64-App.zip"
+    "name": "Yiyan-1.16.0-Windows-x64-App.zip",
+    "bytes": 136283628,
+    "sha256": "d05c5bf386446397f5950befbd179854ce5f90b09ad71a709d3a1ba0e708b667",
+    "url": "https://github.com/hengyuwu-dot/yiyan-paperbridge/releases/download/v1.16.0-windows-update/Yiyan-1.16.0-Windows-x64-App.zip"
   },
   "components": [
     "BUILD-REPORT.json",
@@ -19,7 +19,7 @@
     "Yiyan.exe",
     "Yiyan.pdb"
   ],
-  "expanded_bytes": 151288964,
+  "expanded_bytes": 151484648,
   "minimum_installed_version": "1.5.0",
   "runtime_included": false
 }
